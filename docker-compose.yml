@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  mihomo-core:
+    image: docker.io/dreamacro/mihomo:latest
+    container_name: mihomo-core
+    restart: unless-stopped
+    ports:
+      - "7890:7890"
+      - "9090:9090"
+    volumes:
+      - mihomo-data:/etc/mihomo
+    command: ["mihomo", "-d", "/etc/mihomo"]
+    networks:
+      - qoqclashd-network
+
+  qoqclashd:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    image: qoqclashd:local
+    container_name: qoqclashd
+    restart: unless-stopped
+    depends_on:
+      - mihomo-core
+    ports:
+      - "8080:80"
+    environment:
+      API_HOST: http://mihomo-core:9090
+      API_SECRET: ${QOQCLASHD_API_SECRET:-}
+    networks:
+      - qoqclashd-network
+
+    volumes:
+      - qoqclashd-data:/app/data
+      - qoqclashd-kernel:/app/kernel
+
+volumes:
+  mihomo-data:
+    driver: local
+  qoqclashd-data:
+    driver: local
+  qoqclashd-kernel:
+    driver: local
+
+networks:
+  qoqclashd-network:
+    driver: bridge
