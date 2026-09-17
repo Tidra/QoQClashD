@@ -388,120 +388,113 @@
         </div>
       </DialogWrapper>
 
-      <!-- 节点 编辑/新建 弹窗 -->
-      <dialog ref="nodeDialogRef" class="modal">
-        <div class="modal-box bg-base-100 max-w-xl p-0 outline-none">
-          <!-- 标题行：固定在顶部，含 表单/YAML 切换（SegmentedControl） -->
-          <div class="flex items-center justify-between gap-3 p-4">
-            <h3 class="text-base font-semibold">{{ editingNodeId ? $t('nodeEditTitle') : $t('nodeAddTitle') }}</h3>
-            <SegmentedControl v-model="nodeInputMode" :options="nodeInputModeOptions" />
+      <!-- 节点 编辑/新建 弹窗：与连接/日志配置弹窗同款 DialogWrapper -->
+      <DialogWrapper
+        v-model="nodeDialogOpen"
+        :title="editingNodeId ? $t('nodeEditTitle') : $t('nodeAddTitle')"
+        :box-class="'max-w-xl'"
+        :show-close-button="false"
+      >
+        <template #title-right>
+          <SegmentedControl
+            :model-value="nodeInputMode"
+            :options="nodeInputModeOptions"
+            @update:model-value="switchNodeInputMode($event as 'form' | 'yaml')"
+          />
+        </template>
+        <!-- 内容区随 DialogWrapper content-box 滚动（与节点/连接/日志配置弹窗一致） -->
+        <div v-if="nodeInputMode === 'yaml'" class="flex min-h-[420px] flex-col">
+          <textarea
+            v-model="nodeYaml"
+            class="textarea textarea-bordered h-[420px] w-full resize-none border-base-300 bg-base-100 font-mono text-xs"
+            spellcheck="false"
+          ></textarea>
+        </div>
+        <div v-else class="settings-grid node-form-grid">
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeName') }}</div>
+            <input v-model="nodeForm.name" type="text" class="input input-sm w-40" placeholder="1.2.3.4" />
           </div>
-          <!-- 内容区：固定尺寸 + 内部滚动，切换表单/YAML 时整体不跳 -->
-          <div class="min-h-0 overflow-y-auto p-4 md:h-[440px]">
-            <div v-if="nodeInputMode === 'yaml'" class="flex flex-col gap-3 text-sm">
-              <div class="settings-grid">
-                <div class="setting-item">
-                  <div class="setting-item-label shrink-0!">YAML</div>
-                  <textarea v-model="nodeYaml" class="textarea textarea-bordered h-64 min-h-64 w-full font-mono text-xs" spellcheck="false"></textarea>
-                </div>
-              </div>
-            </div>
-            <div v-else class="flex flex-col gap-3 text-sm">
-              <div class="settings-grid">
-                <div class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeName') }}</div>
-                  <input v-model="nodeForm.name" type="text" class="input input-sm w-full" placeholder="1.2.3.4" />
-                </div>
-                <div class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeType') }}</div>
-                  <select v-model="nodeForm.type" class="select select-sm w-full">
-                    <option v-for="t in NODE_TYPES" :key="t" :value="t">{{ t }}</option>
-                  </select>
-                </div>
-                <div class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeServer') }}</div>
-                  <input v-model="nodeForm.server" type="text" class="input input-sm w-full" placeholder="1.2.3.4" />
-                </div>
-                <div class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodePort') }}</div>
-                  <input
-                    v-model.number="nodeForm.port"
-                    type="number"
-                    min="1"
-                    max="65535"
-                    class="input input-sm w-full"
-                  />
-                </div>
-                <div v-if="hasNodeField('cipher')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeCipher') }}</div>
-                  <input v-model="nodeForm.cipher" type="text" class="input input-sm w-full" placeholder="chacha20-poly1305" />
-                </div>
-                <div v-if="hasNodeField('password')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodePassword') }}</div>
-                  <input v-model="nodeForm.password" type="text" class="input input-sm w-full" />
-                </div>
-                <div v-if="hasNodeField('sni')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeSni') }}</div>
-                  <input v-model="nodeForm.sni" type="text" class="input input-sm w-full" />
-                </div>
-                <div v-if="hasNodeField('fingerprint')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeFingerprint') }}</div>
-                  <select v-model="nodeForm.fingerprint" class="select select-sm w-full">
-                    <option value="">{{ $t('nodeFingerprint') }}</option>
-                    <option value="chrome">chrome</option>
-                    <option value="firefox">firefox</option>
-                    <option value="safari">safari</option>
-                    <option value="ios">ios</option>
-                    <option value="android">android</option>
-                    <option value="edge">edge</option>
-                    <option value="random">random</option>
-                  </select>
-                </div>
-                <div v-if="hasNodeField('wsPath')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeWsPath') }}</div>
-                  <input v-model="nodeForm.wsPath" type="text" class="input input-sm w-full" placeholder="/ws" />
-                </div>
-                <div v-if="hasNodeField('grpcServiceName')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeGrpcServiceName') }}</div>
-                  <input v-model="nodeForm.grpcServiceName" type="text" class="input input-sm w-full" />
-                </div>
-                <div v-if="hasNodeField('alpn')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeAlpn') }}</div>
-                  <input
-                    v-model="nodeForm.alpnStr"
-                    type="text"
-                    class="input input-sm w-full"
-                    :placeholder="'h2,http/1.1'"
-                  />
-                </div>
-                <div v-if="hasNodeField('tfo')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeTfo') }}</div>
-                  <input v-model="nodeForm.tfo" type="checkbox" class="checkbox checkbox-sm" />
-                </div>
-                <div v-if="hasNodeField('skipCert')" class="setting-item">
-                  <div class="setting-item-label shrink-0!">{{ $t('nodeSkipCert') }}</div>
-                  <input v-model="nodeForm.skipCertVerification" type="checkbox" class="checkbox checkbox-sm" />
-                </div>
-              </div>
-            </div>
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeType') }}</div>
+            <SelectInput
+              v-model="nodeForm.type"
+              class="select select-sm min-w-24"
+              :options="NODE_TYPES.map(t => ({ value: t, label: t }))"
+            />
           </div>
-          <!-- 操作行：固定在底部 -->
-          <div class="flex items-center justify-end gap-2 border-t border-base-300/60 p-4 pt-3">
-            <button type="button" class="btn btn-sm btn-ghost" @click="closeNodeDialog">{{ $t('cancel') }}</button>
-            <button
-              type="button"
-              class="btn btn-sm btn-primary"
-              :disabled="!nodeForm.name.trim() || !nodeForm.server.trim() || !nodeForm.port"
-              @click="saveNode"
-            >
-              {{ $t('save') }}
-            </button>
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeServer') }}</div>
+            <input v-model="nodeForm.server" type="text" class="input input-sm w-40" placeholder="1.2.3.4" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('nodePort') }}</div>
+            <input v-model.number="nodeForm.port" type="number" min="1" max="65535" class="input input-sm w-24" />
+          </div>
+          <div v-if="hasNodeField('cipher')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeCipher') }}</div>
+            <input v-model="nodeForm.cipher" type="text" class="input input-sm w-40" placeholder="chacha20-poly1305" />
+          </div>
+          <div v-if="hasNodeField('password')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodePassword') }}</div>
+            <input v-model="nodeForm.password" type="text" class="input input-sm w-40" />
+          </div>
+          <div v-if="hasNodeField('sni')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeSni') }}</div>
+            <input v-model="nodeForm.sni" type="text" class="input input-sm w-40" />
+          </div>
+          <div v-if="hasNodeField('fingerprint')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeFingerprint') }}</div>
+            <SelectInput
+              v-model="nodeForm.fingerprint"
+              class="select select-sm min-w-24"
+              :placeholder="$t('nodeFingerprint')"
+              :options="[
+                { value: '', label: $t('nodeFingerprint') },
+                { value: 'chrome', label: 'chrome' },
+                { value: 'firefox', label: 'firefox' },
+                { value: 'safari', label: 'safari' },
+                { value: 'ios', label: 'ios' },
+                { value: 'android', label: 'android' },
+                { value: 'edge', label: 'edge' },
+                { value: 'random', label: 'random' },
+              ]"
+            />
+          </div>
+          <div v-if="hasNodeField('wsPath')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeWsPath') }}</div>
+            <input v-model="nodeForm.wsPath" type="text" class="input input-sm w-40" placeholder="/ws" />
+          </div>
+          <div v-if="hasNodeField('grpcServiceName')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeGrpcServiceName') }}</div>
+            <input v-model="nodeForm.grpcServiceName" type="text" class="input input-sm w-40" />
+          </div>
+          <div v-if="hasNodeField('alpn')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeAlpn') }}</div>
+            <input v-model="nodeForm.alpnStr" type="text" class="input input-sm w-40" placeholder="h2,http/1.1" />
+          </div>
+          <div v-if="hasNodeField('tfo')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeTfo') }}</div>
+            <input v-model="nodeForm.tfo" type="checkbox" class="toggle" />
+          </div>
+          <div v-if="hasNodeField('skipCert')" class="setting-item">
+            <div class="setting-item-label">{{ $t('nodeSkipCert') }}</div>
+            <input v-model="nodeForm.skipCertVerification" type="checkbox" class="toggle" />
           </div>
         </div>
-        <form method="dialog" class="modal-backdrop">
-          <button @click="closeNodeDialog">close</button>
-        </form>
-      </dialog>
+        <!-- 操作行 -->
+        <div class="flex items-center justify-end gap-2 border-t border-base-300/60 p-4 pt-3">
+          <button type="button" class="btn btn-sm btn-ghost" @click="closeNodeDialog">{{ $t('cancel') }}</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary"
+            :disabled="!nodeForm.name.trim() || !nodeForm.server.trim() || !nodeForm.port"
+            @click="saveNode"
+          >
+            {{ $t('save') }}
+          </button>
+        </div>
+      </DialogWrapper>
     </div>
   </div>
 </template>
@@ -734,7 +727,7 @@ const removePoolById = async (id: string) => {
 }
 
 // ── 节点 弹窗 ───────────────────────────────────────────────────
-const nodeDialogRef = ref<HTMLDialogElement | null>(null)
+const nodeDialogOpen = ref(false)
 const activePoolId = ref<string | null>(null)
 const editingNodeId = ref<string | null>(null)
 
@@ -773,7 +766,7 @@ const openCreateNodeDialog = (pool: NodePool) => {
   nodeForm.value = emptyNodeForm()
   nodeInputMode.value = 'form'
   nodeYaml.value = ''
-  nodeDialogRef.value?.showModal()
+  nodeDialogOpen.value = true
 }
 
 const openEditNodeDialog = (pool: NodePool, node: CustomNode) => {
@@ -795,8 +788,9 @@ const openEditNodeDialog = (pool: NodePool, node: CustomNode) => {
     skipCertVerification: node.skipCertVerification ?? false,
   }
   nodeInputMode.value = 'form'
-  nodeYaml.value = ''
-  nodeDialogRef.value?.showModal()
+  // 预生成 YAML，切到 YAML 标签即可见当前节点数据（可选空字段不输出）
+  nodeYaml.value = stringifyYaml(pruneEmptyNodeForm(nodeForm.value), { indent: 2 })
+  nodeDialogOpen.value = true
 }
 
 // 剔除未填写的可选字段，YAML 中就不输出这些键（而不是输出空值）
@@ -828,7 +822,7 @@ const switchNodeInputMode = (mode: 'form' | 'yaml') => {
   nodeInputMode.value = mode
 }
 
-const closeNodeDialog = () => nodeDialogRef.value?.close()
+const closeNodeDialog = () => { nodeDialogOpen.value = false }
 
 const saveNode = () => {
   if (!activePoolId.value) return

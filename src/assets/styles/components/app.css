@@ -74,6 +74,24 @@
 .settings-grid {
   @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;
 }
+
+/* 节点编辑表单：大屏两列、小屏单列 */
+.node-form-grid {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 768px) {
+  .node-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.node-form-grid .node-span-2 {
+  grid-column: 1 / -1;
+}
+@media (max-width: 767px) {
+  .node-form-grid .node-span-2 {
+    grid-column: auto;
+  }
+}
 .setting-item {
   @apply border-base-border flex min-h-12 items-center gap-3 border-b px-4 py-2 outline-none;
   &:last-child {
