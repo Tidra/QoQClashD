@@ -87,6 +87,8 @@ const en = {
   nodeWsHeaders: 'WS Headers',
   nodeGrpcServiceName: 'gRPC Service Name',
   nodeTfo: 'TFO',
+  nodeTesting: 'Testing…',
+  nodeTestLatency: 'Test',
   nodeSkipCert: 'Skip cert verification',
   nodeDeleteConfirm: 'Delete this node?',
   nodesDeleteConfirm: 'Delete the selected nodes?',

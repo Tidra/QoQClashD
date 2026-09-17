@@ -45,7 +45,7 @@ export function useStorage<T>(
 
   const currentKey = toValue(key)
   const state = ref(cloneDefault(toValue(defaults))) as { value: T }
-  let loading = true
+  const loading = ref(true)
   void readServerValue<T>(currentKey)
     .then((value) => {
       if (value !== undefined) state.value = value
@@ -54,19 +54,26 @@ export function useStorage<T>(
       console.warn(`[storage] ${currentKey} is unavailable`, error)
     })
     .finally(() => {
-      loading = false
+      loading.value = false
     })
 
   watch(
     state,
     (value) => {
-      if (loading) return
+      if (loading.value) return
       void writeServerValue(currentKey, value).catch((error) => {
         console.error(`[storage] failed to persist ${currentKey}`, error)
       })
     },
     { deep: true },
   )
+
+  // 暴露 loading 标志：调用方可用 `ref.loading` 判断异步拉取是否完成
+  Object.defineProperty(state, 'loading', {
+    get: () => loading.value,
+    configurable: true,
+    enumerable: false,
+  })
 
   return state
 }

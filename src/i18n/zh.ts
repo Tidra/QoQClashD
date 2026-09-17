@@ -89,6 +89,8 @@ const zh: LANG_MESSAGE = {
   nodeWsHeaders: 'WS 请求头',
   nodeGrpcServiceName: 'gRPC 服务名',
   nodeTfo: 'TFO',
+  nodeTesting: '测速中…',
+  nodeTestLatency: '测速',
   nodeSkipCert: '跳过证书验证',
   nodeDeleteConfirm: '删除此节点？',
   nodesDeleteConfirm: '删除选中的节点？',

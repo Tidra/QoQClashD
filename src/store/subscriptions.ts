@@ -17,7 +17,6 @@ export type SubscriptionStatus = 'idle' | 'pending' | 'ok' | 'error'
 // 订阅元数据持久化在 localStorage（data 目录的浏览器侧落点）。
 // 节点内容本身拉取后由 nodePool 统一合并，这里只存"哪个订阅 + 什么状态"。
 export const subscriptionList = useStorage<SubscriptionItem[]>('config/subscriptions', [])
-
 // 每个订阅的拉取状态，不持久化（会话级），刷新后重置为 idle。
 export const subscriptionStatus = ref<Record<string, SubscriptionStatus>>({})
 export const subscriptionError = ref<Record<string, string>>({})

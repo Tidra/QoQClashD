@@ -1,5 +1,6 @@
 import '@/api/http'
 import '@/helper/dayjs'
+import '@/store/sampleData'
 import 'tippy.js/animations/scale.css'
 import 'tippy.js/dist/tippy.css'
 import { createApp } from 'vue'

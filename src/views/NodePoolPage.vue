@@ -2,19 +2,19 @@
   <div class="flex h-full min-w-0 w-full flex-1 flex-col overflow-auto" :style="padding">
     <NodePageHeader>
       <template #search>
-        <input
+        <TextInput
           v-if="props.view === 'nodes'"
           v-model="nodeSearch"
-          type="search"
-          class="input input-sm input-bordered w-full max-w-md"
           :placeholder="`${$t('search')} | Regex`"
+          clearable
+          class="w-32 max-w-80 flex-1"
         />
-        <input
+        <TextInput
           v-else
           v-model="poolSearch"
-          type="search"
-          class="input input-sm input-bordered w-full max-w-md"
           :placeholder="`${$t('search')} | Regex`"
+          clearable
+          class="w-32 max-w-80 flex-1"
         />
       </template>
       <template v-if="props.view === 'groups'">
@@ -48,31 +48,32 @@
       :class="((props.view === 'nodes' ? nodeViewMode : groupViewMode) === 'card') && 'p-3 md:p-4'"
     >
       <template v-if="props.view === 'nodes'">
-        <div v-if="!allNodes.length" class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center">
+        <div v-if="nodePoolsLoading" class="flex h-full items-center justify-center text-base-content/50">
+          <span class="loading loading-spinner loading-lg"></span>
+        </div>
+        <div v-else-if="!allNodes.length" class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center">
           <div class="text-base-content/60 mb-2 text-sm">{{ $t('nodePoolEmpty') }}</div>
           <button type="button" class="btn btn-primary btn-sm" @click="openCreateNodeFromHeader">
             <PlusIcon class="h-4 w-4" /> {{ $t('nodePoolAddNode') }}
           </button>
         </div>
         <div v-else-if="nodeViewMode === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-          <div v-for="node in filteredNodes" :key="node.id" class="bg-base-200 hover:bg-base-300/50 relative flex min-h-16 cursor-pointer flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm">
-            <div class="flex items-start justify-between gap-3">
+          <div v-for="node in filteredNodes" :key="node.id" class="bg-base-200 hover:bg-base-300/50 relative flex flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm">
+            <div class="flex min-w-0 items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="truncate font-medium">{{ node.name }}</div>
                 <div class="text-base-content/60 mt-1 truncate text-xs">{{ node.type }} · {{ node.server }}:{{ node.port }}</div>
               </div>
             </div>
-            <div class="flex h-4 w-full items-center justify-between">
-              <span class="text-base-content/60 truncate text-xs tracking-tight">{{ node.server }}:{{ node.port }}</span>
+            <div class="flex w-full items-center justify-between gap-2">
+              <div class="relative z-10 flex shrink-0 gap-0.5">
+                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
+                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
+              </div>
               <button type="button" class="badge badge-ghost h-5 min-h-5 shrink-0 cursor-pointer px-1.5 text-[10px]" :disabled="isTesting" @click.stop="testNode(node.name)">
                 <span v-if="latencyMap[node.name] !== undefined">{{ latencyMap[node.name] ?? '—' }}ms</span>
-                <BoltIcon v-else class="h-3 w-3" />
+                <template v-else><BoltIcon class="h-3 w-3" /> {{ $t('nodeTestLatency') }}</template>
               </button>
-            </div>
-            <div class="absolute inset-0" @click="editStandaloneNode(node)"></div>
-            <div class="relative z-10 flex w-full justify-end gap-0.5 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
-              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
-              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
             </div>
           </div>
         </div>
@@ -117,9 +118,13 @@
         </div>
       </template>
       <template v-else>
+      <!-- 加载中 -->
+      <div v-if="nodePoolsLoading" class="flex h-full items-center justify-center text-base-content/50">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
       <!-- 空状态 -->
       <div
-        v-if="!pools.length"
+        v-else-if="!pools.length"
         class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center"
       >
         <div class="text-base-content/60 mb-2 text-sm">{{ $t('nodePoolEmpty') }}</div>
@@ -193,15 +198,21 @@
             <div
               v-for="node in getFilteredNodes(pool)"
               :key="node.id"
-              class="bg-base-100/70 hover:bg-base-100 relative flex min-h-16 cursor-pointer flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
-              @click="openEditNodeDialog(pool, node)"
+              class="bg-base-100/70 hover:bg-base-100 relative flex flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
             >
               <div class="min-w-0">
                 <div class="truncate text-sm font-medium">{{ node.name }}</div>
                 <div class="text-base-content/60 mt-1 truncate text-xs">{{ node.type }} · {{ node.server }}:{{ node.port }}</div>
               </div>
-              <div class="flex h-4 w-full items-center justify-between">
-                <span class="text-base-content/60 truncate text-xs tracking-tight">{{ node.server }}:{{ node.port }}</span>
+              <div class="flex w-full items-center justify-between gap-2">
+                <div class="flex shrink-0 gap-0.5">
+                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="openEditNodeDialog(pool, node)">
+                    <PencilIcon class="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeNodeById(pool.id, node.id)">
+                    <TrashIcon class="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <button
                   type="button"
                   class="badge badge-ghost h-5 min-h-5 shrink-0 cursor-pointer px-1.5 text-[10px]"
@@ -209,15 +220,7 @@
                   @click.stop="testNode(node.name)"
                 >
                   <span v-if="latencyMap[node.name] !== undefined">{{ latencyMap[node.name] ?? '—' }}ms</span>
-                  <BoltIcon v-else class="h-3 w-3" />
-                </button>
-              </div>
-              <div class="absolute right-1 top-1 z-10 flex gap-0.5 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="openEditNodeDialog(pool, node)">
-                  <PencilIcon class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeNodeById(pool.id, node.id)">
-                  <TrashIcon class="h-3.5 w-3.5" />
+                  <template v-else><BoltIcon class="h-3 w-3" /> {{ $t('nodeTestLatency') }}</template>
                 </button>
               </div>
             </div>
@@ -387,100 +390,103 @@
 
       <!-- 节点 编辑/新建 弹窗 -->
       <dialog ref="nodeDialogRef" class="modal">
-        <div class="modal-box max-w-xl">
-          <h3 class="text-lg font-semibold">
-            {{ editingNodeId ? $t('nodeEditTitle') : $t('nodeAddTitle') }}
-          </h3>
-          <div class="mt-4 flex justify-end">
+        <div class="modal-box max-w-xl h-[560px] flex flex-col overflow-hidden">
+          <!-- 标题行 + 表单/YAML 切换 -->
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="text-lg font-semibold">{{ editingNodeId ? $t('nodeEditTitle') : $t('nodeAddTitle') }}</h3>
             <div class="join">
               <button type="button" class="btn btn-sm join-item" :class="nodeInputMode === 'form' ? 'btn-primary' : 'btn-ghost'" @click="nodeInputMode = 'form'">{{ $t('formMode') }}</button>
               <button type="button" class="btn btn-sm join-item" :class="nodeInputMode === 'yaml' ? 'btn-primary' : 'btn-ghost'" @click="switchNodeInputMode('yaml')">{{ $t('dualModeYaml') }}</button>
             </div>
           </div>
-          <div v-if="nodeInputMode === 'yaml'" class="mt-4">
-            <textarea v-model="nodeYaml" class="textarea textarea-bordered h-96 w-full font-mono text-xs" spellcheck="false"></textarea>
+          <!-- 内容区：固定高度、内部滚动，切换表单/YAML 时整体尺寸不变 -->
+          <div class="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+            <div v-if="nodeInputMode === 'yaml'" class="h-full">
+              <textarea v-model="nodeYaml" class="textarea textarea-bordered h-full min-h-[380px] w-full font-mono text-xs" spellcheck="false"></textarea>
+            </div>
+            <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeName') }}</span>
+                <input v-model="nodeForm.name" type="text" class="input input-sm input-bordered w-full" />
+              </label>
+              <label class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeType') }}</span>
+                <select v-model="nodeForm.type" class="select select-sm select-bordered w-full">
+                  <option v-for="t in NODE_TYPES" :key="t" :value="t">{{ t }}</option>
+                </select>
+              </label>
+              <label class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeServer') }}</span>
+                <input v-model="nodeForm.server" type="text" class="input input-sm input-bordered w-full" placeholder="1.2.3.4" />
+              </label>
+              <label class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodePort') }}</span>
+                <input
+                  v-model.number="nodeForm.port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  class="input input-sm input-bordered w-full"
+                />
+              </label>
+              <label v-if="hasNodeField('cipher')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeCipher') }}</span>
+                <input v-model="nodeForm.cipher" type="text" class="input input-sm input-bordered w-full" placeholder="chacha20-poly1305" />
+              </label>
+              <label v-if="hasNodeField('password')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodePassword') }}</span>
+                <input v-model="nodeForm.password" type="text" class="input input-sm input-bordered w-full" />
+              </label>
+              <label v-if="hasNodeField('sni')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeSni') }}</span>
+                <input v-model="nodeForm.sni" type="text" class="input input-sm input-bordered w-full" />
+              </label>
+              <label v-if="hasNodeField('fingerprint')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeFingerprint') }}</span>
+                <select v-model="nodeForm.fingerprint" class="select select-sm select-bordered w-full">
+                  <option value="">{{ $t('nodeFingerprint') }}</option>
+                  <option value="chrome">chrome</option>
+                  <option value="firefox">firefox</option>
+                  <option value="safari">safari</option>
+                  <option value="ios">ios</option>
+                  <option value="android">android</option>
+                  <option value="edge">edge</option>
+                  <option value="random">random</option>
+                </select>
+              </label>
+              <label v-if="hasNodeField('wsPath')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeWsPath') }}</span>
+                <input v-model="nodeForm.wsPath" type="text" class="input input-sm input-bordered w-full" placeholder="/ws" />
+              </label>
+              <label v-if="hasNodeField('grpcServiceName')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeGrpcServiceName') }}</span>
+                <input v-model="nodeForm.grpcServiceName" type="text" class="input input-sm input-bordered w-full" />
+              </label>
+              <label v-if="hasNodeField('alpn')" class="form-control w-full">
+                <span class="label-text mb-1">{{ $t('nodeAlpn') }}</span>
+                <input
+                  v-model="nodeForm.alpnStr"
+                  type="text"
+                  class="input input-sm input-bordered w-full"
+                  :placeholder="'h2,http/1.1'"
+                />
+              </label>
+              <label v-if="hasNodeField('tfo')" class="label cursor-pointer justify-start gap-3">
+                <input v-model="nodeForm.tfo" type="checkbox" class="checkbox checkbox-sm" />
+                <span class="label-text">{{ $t('nodeTfo') }}</span>
+              </label>
+              <label v-if="hasNodeField('skipCert')" class="label cursor-pointer justify-start gap-3">
+                <input v-model="nodeForm.skipCertVerification" type="checkbox" class="checkbox checkbox-sm" />
+                <span class="label-text">{{ $t('nodeSkipCert') }}</span>
+              </label>
+            </div>
           </div>
-          <div v-else class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeName') }}</span>
-              <input v-model="nodeForm.name" type="text" class="input input-bordered w-full" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeType') }}</span>
-              <select v-model="nodeForm.type" class="select select-bordered w-full">
-                <option v-for="t in NODE_TYPES" :key="t" :value="t">{{ t }}</option>
-              </select>
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeServer') }}</span>
-              <input v-model="nodeForm.server" type="text" class="input input-bordered w-full" placeholder="1.2.3.4" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodePort') }}</span>
-              <input
-                v-model.number="nodeForm.port"
-                type="number"
-                min="1"
-                max="65535"
-                class="input input-bordered w-full"
-              />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeCipher') }}</span>
-              <input v-model="nodeForm.cipher" type="text" class="input input-bordered w-full" placeholder="chacha20-poly1305" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodePassword') }}</span>
-              <input v-model="nodeForm.password" type="text" class="input input-bordered w-full" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeSni') }}</span>
-              <input v-model="nodeForm.sni" type="text" class="input input-bordered w-full" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeFingerprint') }}</span>
-              <select v-model="nodeForm.fingerprint" class="select select-bordered w-full">
-                <option value="">{{ $t('nodeFingerprint') }}</option>
-                <option value="chrome">chrome</option>
-                <option value="firefox">firefox</option>
-                <option value="safari">safari</option>
-                <option value="ios">ios</option>
-                <option value="android">android</option>
-                <option value="edge">edge</option>
-                <option value="random">random</option>
-              </select>
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeWsPath') }}</span>
-              <input v-model="nodeForm.wsPath" type="text" class="input input-bordered w-full" placeholder="/ws" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeGrpcServiceName') }}</span>
-              <input v-model="nodeForm.grpcServiceName" type="text" class="input input-bordered w-full" />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeAlpn') }}</span>
-              <input
-                v-model="nodeForm.alpnStr"
-                type="text"
-                class="input input-bordered w-full"
-                :placeholder="'h2,http/1.1'"
-              />
-            </label>
-            <label class="label cursor-pointer justify-start gap-3">
-              <input v-model="nodeForm.tfo" type="checkbox" class="checkbox" />
-              <span class="label-text">{{ $t('nodeTfo') }}</span>
-            </label>
-            <label class="label cursor-pointer justify-start gap-3">
-              <input v-model="nodeForm.skipCertVerification" type="checkbox" class="checkbox" />
-              <span class="label-text">{{ $t('nodeSkipCert') }}</span>
-            </label>
-          </div>
-          <div class="modal-action">
-            <button type="button" class="btn btn-ghost" @click="closeNodeDialog">{{ $t('cancel') }}</button>
+          <!-- 操作行：固定不随内容滚动 -->
+          <div class="mt-3 flex shrink-0 items-center justify-end gap-2 border-t border-base-300/60 pt-3">
+            <button type="button" class="btn btn-sm btn-ghost" @click="closeNodeDialog">{{ $t('cancel') }}</button>
             <button
               type="button"
-              class="btn btn-primary"
+              class="btn btn-sm btn-primary"
               :disabled="!nodeForm.name.trim() || !nodeForm.server.trim() || !nodeForm.port"
               @click="saveNode"
             >
@@ -524,7 +530,8 @@ import Draggable from 'vuedraggable'
 import NodePageHeader from '@/components/proxies/NodePageHeader.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
-import { computed, reactive, ref } from 'vue'
+import TextInput from '@/components/common/TextInput.vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStorage } from '@vueuse/core'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
@@ -537,7 +544,37 @@ const NODE_TYPES = [
   'vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'ss', 'ssr',
 ] as const
 
+// 各协议在弹窗表单中显示的可选字段（核心字段 名称/类型/服务器/端口 恒显示）
+type NodeFieldKey = 'cipher' | 'password' | 'sni' | 'fingerprint' | 'wsPath' | 'grpcServiceName' | 'alpn' | 'tfo' | 'skipCert'
+const NODE_TYPE_FIELDS: Record<string, NodeFieldKey[]> = {
+  vmess: ['cipher', 'sni', 'fingerprint', 'wsPath', 'alpn', 'tfo', 'skipCert'],
+  vless: ['sni', 'fingerprint', 'wsPath', 'grpcServiceName', 'alpn', 'skipCert'],
+  trojan: ['password', 'sni', 'fingerprint', 'wsPath', 'grpcServiceName', 'alpn', 'skipCert'],
+  hysteria2: ['password', 'sni', 'alpn', 'skipCert'],
+  shadowsocks: ['cipher', 'password'],
+  ss: ['cipher', 'password'],
+  ssr: ['cipher', 'password', 'sni'],
+}
+const hasNodeField = (key: NodeFieldKey) =>
+  NODE_TYPE_FIELDS[nodeForm.value.type]?.includes(key) ?? false
+
+// 切换节点类型时，清理该类型不支持的字段，避免残留值被写入
+const pruneNodeFormForType = () => {
+  const allowed = NODE_TYPE_FIELDS[nodeForm.value.type] ?? []
+  const f = nodeForm.value
+  if (!allowed.includes('cipher')) f.cipher = ''
+  if (!allowed.includes('password')) f.password = ''
+  if (!allowed.includes('sni')) f.sni = ''
+  if (!allowed.includes('fingerprint')) f.fingerprint = ''
+  if (!allowed.includes('wsPath')) f.wsPath = ''
+  if (!allowed.includes('grpcServiceName')) f.grpcServiceName = ''
+  if (!allowed.includes('alpn')) f.alpnStr = ''
+  if (!allowed.includes('tfo')) f.tfo = false
+  if (!allowed.includes('skipCert')) f.skipCertVerification = false
+}
+
 const pools = computed(() => nodePools.value)
+const nodePoolsLoading = computed(() => !!(nodePools as unknown as { loading?: boolean }).loading)
 const poolSearch = ref('')
 const visiblePools = computed(() => {
   const keyword = poolSearch.value.trim().toLowerCase()
@@ -718,12 +755,15 @@ const nodeForm = ref<NodeFormData>(emptyNodeForm())
 const nodeInputMode = ref<'form' | 'yaml'>('form')
 const nodeYaml = ref('')
 
+// 切换节点类型时，清理该类型不支持的字段，避免残留值被写入
+watch(() => nodeForm.value.type, pruneNodeFormForType)
+
 const openCreateNodeDialog = (pool: NodePool) => {
   activePoolId.value = pool.id
   editingNodeId.value = null
   nodeForm.value = emptyNodeForm()
   nodeInputMode.value = 'form'
-  nodeYaml.value = stringifyYaml(nodeForm.value)
+  nodeYaml.value = ''
   nodeDialogRef.value?.showModal()
 }
 
@@ -746,12 +786,27 @@ const openEditNodeDialog = (pool: NodePool, node: CustomNode) => {
     skipCertVerification: node.skipCertVerification ?? false,
   }
   nodeInputMode.value = 'form'
-  nodeYaml.value = stringifyYaml(nodeForm.value)
+  nodeYaml.value = ''
   nodeDialogRef.value?.showModal()
 }
 
+// 剔除未填写的可选字段，YAML 中就不输出这些键（而不是输出空值）
+const pruneEmptyNodeForm = (form: NodeFormData): Record<string, unknown> => {
+  const out: Record<string, unknown> = { ...form }
+  delete out.alpnStr
+  for (const key of ['cipher', 'password', 'sni', 'fingerprint', 'wsPath', 'grpcServiceName'] as const) {
+    if (!out[key]) delete out[key]
+  }
+  if (!out.alpn?.length) delete out.alpn
+  if (!out.tfo) delete out.tfo
+  if (!out.skipCertVerification) delete out.skipCertVerification
+  return out
+}
+
 const switchNodeInputMode = (mode: 'form' | 'yaml') => {
-  if (mode === 'yaml') nodeYaml.value = stringifyYaml(nodeForm.value)
+  if (mode === 'yaml') {
+    nodeYaml.value = stringifyYaml(pruneEmptyNodeForm(nodeForm.value), { indent: 2 })
+  }
   else {
     try {
       const parsed = parseYaml(nodeYaml.value) as Partial<NodeFormData>
@@ -778,13 +833,21 @@ const saveNode = () => {
     }
   }
   const { alpnStr, ...rest } = nodeForm.value
+  // 可选字段留空则不写入（undefined 在序列化/合并时会被忽略）
   const patch: Omit<CustomNode, 'id'> = {
-    ...rest,
     name: rest.name.trim(),
+    type: rest.type,
     server: rest.server.trim(),
-    alpn: alpnStr
-      ? alpnStr.split(',').map((s) => s.trim()).filter(Boolean)
-      : undefined,
+    port: rest.port,
+    ...(rest.cipher ? { cipher: rest.cipher } : {}),
+    ...(rest.password ? { password: rest.password } : {}),
+    ...(rest.sni ? { sni: rest.sni } : {}),
+    ...(rest.fingerprint ? { fingerprint: rest.fingerprint } : {}),
+    ...(alpnStr ? { alpn: alpnStr.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+    ...(rest.wsPath ? { wsPath: rest.wsPath } : {}),
+    ...(rest.grpcServiceName ? { grpcServiceName: rest.grpcServiceName } : {}),
+    ...(rest.tfo ? { tfo: true } : {}),
+    ...(rest.skipCertVerification ? { skipCertVerification: true } : {}),
   }
   if (editingNodeId.value) {
     updateNode(activePoolId.value, editingNodeId.value, patch)
