@@ -1,6 +1,6 @@
 import { proxyGroupList, proxyMap } from '@/assembly/proxies'
 import { FOLDER_MODE, FOLDER_MODE_AUTO_THRESHOLD } from '@/constant'
-import { useStorage } from '@/helper/storage'
+import { useStorage, whenStorageReady } from '@/helper/storage'
 import { proxyFolderMode } from '@/store/settings'
 import { v4 as uuid } from 'uuid'
 import { computed, watch } from 'vue'
@@ -106,7 +106,8 @@ const seedDefaultFolders = () => {
   folderState.value.seeded = true
 }
 
-seedDefaultFolders()
+// 等待首次服务器读取完成，避免 seeded 标记还是默认值时覆盖已保存的分组
+void whenStorageReady().then(() => seedDefaultFolders())
 
 export const folders = computed({
   get: () => folderState.value.folders,

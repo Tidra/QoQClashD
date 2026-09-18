@@ -33,6 +33,32 @@ async function writeServerValue(key: string, value: unknown) {
   if (!response.ok) throw new Error(`storage write failed: HTTP ${response.status}`)
 }
 
+// 水合门控：useStorage 的初始值是默认值，服务器数据要等异步 GET 返回。
+// 计数器归零时 resolve，读取失败同样视为完成，保证 await 永不悬挂。
+let pendingHydrations = 0
+let readyPromise: Promise<void> = Promise.resolve()
+let markReady: (() => void) | undefined
+
+const beginHydration = () => {
+  pendingHydrations += 1
+  if (pendingHydrations === 1) {
+    readyPromise = new Promise<void>((resolve) => {
+      markReady = resolve
+    })
+  }
+}
+
+const endHydration = () => {
+  pendingHydrations = Math.max(0, pendingHydrations - 1)
+  if (pendingHydrations === 0) {
+    markReady?.()
+    markReady = undefined
+  }
+}
+
+/** 等待当前已创建的全部存储项完成首次服务器读取（读取失败也会 resolve） */
+export const whenStorageReady = () => readyPromise
+
 export function useStorage<T>(
   key: MaybeRefOrGetter<string>,
   defaults: MaybeRefOrGetter<T>,
@@ -46,21 +72,42 @@ export function useStorage<T>(
   const currentKey = toValue(key)
   const state = ref(cloneDefault(toValue(defaults))) as { value: T }
   const loading = ref(true)
+  // 水合期间发生的本地修改（种子注入、HMR 后重放等）不能被迟到的服务器旧值覆盖，
+  // 且水合结束后要回写服务器，否则修改会两头丢失。
+  let localDirty = false
+  // 最近一次与服务器一致序列化值：跳过内容相同的回显写入（水合回写、克隆赋值等）
+  let lastSynced: string | undefined
+  beginHydration()
   void readServerValue<T>(currentKey)
     .then((value) => {
-      if (value !== undefined) state.value = value
+      if (value === undefined) return
+      lastSynced = JSON.stringify(value)
+      if (!localDirty) state.value = value
     })
     .catch((error) => {
       console.warn(`[storage] ${currentKey} is unavailable`, error)
     })
     .finally(() => {
       loading.value = false
+      if (localDirty) {
+        lastSynced = JSON.stringify(state.value)
+        void writeServerValue(currentKey, state.value).catch((error) => {
+          console.error(`[storage] failed to persist ${currentKey}`, error)
+        })
+      }
+      endHydration()
     })
 
   watch(
     state,
     (value) => {
-      if (loading.value) return
+      if (loading.value) {
+        localDirty = true
+        return
+      }
+      const serialized = JSON.stringify(value)
+      if (serialized === lastSynced) return
+      lastSynced = serialized
       void writeServerValue(currentKey, value).catch((error) => {
         console.error(`[storage] failed to persist ${currentKey}`, error)
       })

@@ -41,12 +41,25 @@
         :style="panelStyle"
         :aria-label="ariaLabel()"
       >
+        <div
+          v-if="searchable"
+          class="bg-base-100 sticky top-0 z-10 pb-1"
+        >
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="input input-sm input-bordered w-full"
+            :placeholder="searchPlaceholder"
+            @keydown="handleSearchKeydown"
+          />
+        </div>
         <template
-          v-for="(option, index) in options"
+          v-for="(option, index) in visibleOptions"
           :key="optionId(index)"
         >
           <div
-            v-if="option.group && option.group !== options[index - 1]?.group"
+            v-if="option.group && option.group !== visibleOptions[index - 1]?.group"
             class="text-base-content/45 px-2 pt-2 pb-1 text-xs font-medium"
           >
             {{ option.group }}
@@ -83,6 +96,12 @@
             />
           </div>
         </template>
+        <div
+          v-if="searchable && !visibleOptions.length"
+          class="text-base-content/40 px-2 py-3 text-center text-sm"
+        >
+          {{ noResultsText }}
+        </div>
       </div>
     </Transition>
   </Teleport>
@@ -111,12 +130,19 @@ const props = withDefaults(
     disabled?: boolean
     panelClass?: string
     optionClass?: string
+    /** 在面板顶部显示搜索框，按 label 部分匹配过滤选项 */
+    searchable?: boolean
+    searchPlaceholder?: string
+    noResultsText?: string
   }>(),
   {
     placeholder: '',
     disabled: false,
     panelClass: '',
     optionClass: '',
+    searchable: false,
+    searchPlaceholder: '',
+    noResultsText: '',
   },
 )
 
@@ -133,9 +159,11 @@ const model = defineModel<T>({ required: true })
 const attrs = useAttrs()
 const triggerRef = ref<HTMLButtonElement>()
 const panelRef = ref<HTMLDivElement>()
+const searchInputRef = ref<HTMLInputElement>()
 const isMounted = ref(false)
 const isOpen = ref(false)
 const activeIndex = ref(-1)
+const searchQuery = ref('')
 const id = useId().replace(/[^\w-]/g, '')
 const listboxId = `select-listbox-${id}`
 let typeahead = ''
@@ -154,29 +182,40 @@ const ariaLabel = () => attrs['aria-label']?.toString()
 const isSameValue = (a: T, b: T) =>
   Object.is(a, b) ||
   (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && isEqual(a, b))
-const selectedIndex = computed(() =>
-  props.options.findIndex((option) => isSameValue(option.value, model.value)),
+
+const visibleOptions = computed(() => {
+  if (!props.searchable) return props.options
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return props.options
+  return props.options.filter((option) => option.label.toLowerCase().includes(query))
+})
+
+const selectedOption = computed(() =>
+  props.options.find((option) => isSameValue(option.value, model.value)),
 )
-const selectedOption = computed(() => props.options[selectedIndex.value])
+const visibleSelectedIndex = computed(() =>
+  visibleOptions.value.findIndex((option) => isSameValue(option.value, model.value)),
+)
 
 const optionId = (index: number) => `${listboxId}-option-${index}`
 const isSelected = (option: SelectOption<T>) => isSameValue(option.value, model.value)
 
-const firstEnabledIndex = () => props.options.findIndex((option) => !option.disabled)
+const firstEnabledIndex = () => visibleOptions.value.findIndex((option) => !option.disabled)
 const lastEnabledIndex = () => {
-  for (let index = props.options.length - 1; index >= 0; index--) {
-    if (!props.options[index].disabled) return index
+  for (let index = visibleOptions.value.length - 1; index >= 0; index--) {
+    if (!visibleOptions.value[index].disabled) return index
   }
   return -1
 }
 
 const moveActive = (direction: 1 | -1) => {
-  if (!props.options.length) return
+  const options = visibleOptions.value
+  if (!options.length) return
 
   let index = activeIndex.value
-  for (let count = 0; count < props.options.length; count++) {
-    index = (index + direction + props.options.length) % props.options.length
-    if (!props.options[index].disabled) {
+  for (let count = 0; count < options.length; count++) {
+    index = (index + direction + options.length) % options.length
+    if (!options[index].disabled) {
       activeIndex.value = index
       scrollActiveIntoView()
       return
@@ -185,7 +224,7 @@ const moveActive = (direction: 1 | -1) => {
 }
 
 const setActiveIndex = (index: number) => {
-  if (!props.options[index]?.disabled) activeIndex.value = index
+  if (!visibleOptions.value[index]?.disabled) activeIndex.value = index
 }
 
 const scrollActiveIntoView = () => {
@@ -196,11 +235,16 @@ const scrollActiveIntoView = () => {
   })
 }
 
+const focusSearch = () => {
+  nextTick(() => searchInputRef.value?.focus())
+}
+
 const open = () => {
   if (props.disabled || isOpen.value) return
-  activeIndex.value = selectedIndex.value >= 0 ? selectedIndex.value : firstEnabledIndex()
+  activeIndex.value = visibleSelectedIndex.value >= 0 ? visibleSelectedIndex.value : firstEnabledIndex()
   isOpen.value = true
   scrollActiveIntoView()
+  if (props.searchable) focusSearch()
 }
 
 const close = () => {
@@ -223,7 +267,7 @@ const selectOption = (option: SelectOption<T>) => {
 }
 
 const selectActive = () => {
-  const option = props.options[activeIndex.value]
+  const option = visibleOptions.value[activeIndex.value]
   if (option) selectOption(option)
 }
 
@@ -232,10 +276,11 @@ const handleTypeahead = (key: string) => {
   if (typeaheadTimer) clearTimeout(typeaheadTimer)
   typeaheadTimer = setTimeout(() => (typeahead = ''), 500)
 
+  const options = visibleOptions.value
   const start = Math.max(activeIndex.value, -1)
-  for (let offset = 1; offset <= props.options.length; offset++) {
-    const index = (start + offset) % props.options.length
-    const option = props.options[index]
+  for (let offset = 1; offset <= options.length; offset++) {
+    const index = (start + offset) % options.length
+    const option = options[index]
     if (!option.disabled && option.label.toLocaleLowerCase().startsWith(typeahead)) {
       activeIndex.value = index
       scrollActiveIntoView()
@@ -284,9 +329,40 @@ const handleTriggerKeydown = (event: KeyboardEvent) => {
       break
     default:
       if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        if (!isOpen.value) open()
-        handleTypeahead(event.key)
+        if (props.searchable) {
+          // 直接在触发器上打字：带入搜索框，由面板搜索过滤
+          if (!isOpen.value) open()
+          searchQuery.value += event.key
+          focusSearch()
+        } else {
+          if (!isOpen.value) open()
+          handleTypeahead(event.key)
+        }
       }
+  }
+}
+
+const handleSearchKeydown = (event: KeyboardEvent) => {
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault()
+      moveActive(1)
+      break
+    case 'ArrowUp':
+      event.preventDefault()
+      moveActive(-1)
+      break
+    case 'Enter':
+      event.preventDefault()
+      selectActive()
+      break
+    case 'Escape':
+      event.stopPropagation()
+      close()
+      triggerRef.value?.focus()
+      break
+    case 'Tab':
+      close()
   }
 }
 
@@ -301,13 +377,21 @@ watch(isOpen, (open) => {
   if (open) return
   typeahead = ''
   if (typeaheadTimer) clearTimeout(typeaheadTimer)
+  searchQuery.value = ''
+})
+
+watch(searchQuery, () => {
+  if (!isOpen.value) return
+  activeIndex.value = firstEnabledIndex()
+  scrollActiveIntoView()
+  remeasure()
 })
 
 watch(
   () => [model.value, props.options],
   () => {
     if (isOpen.value) {
-      activeIndex.value = selectedIndex.value
+      activeIndex.value = visibleSelectedIndex.value
       remeasure()
     }
   },

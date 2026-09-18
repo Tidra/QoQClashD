@@ -2,6 +2,7 @@ import { resolvePageTransition } from '@/composables/pageTransition'
 import { ROUTE_NAME } from '@/constant'
 import { i18n } from '@/i18n'
 import { isPanelAuthenticated } from '@/helper/panelAuth'
+import { whenStorageReady } from '@/helper/storage'
 import { language } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
@@ -93,8 +94,12 @@ const setTitleByName = (name: string | symbol | undefined) => {
   }
 }
 
-router.beforeEach((to, from) => {
+router.beforeEach(async (to, from) => {
   resolvePageTransition(to, from)
+
+  // 面板认证状态存于后端 SQLite，异步读取完成前 panelAuthenticated 是默认 false，
+  // 直接判断会把已登录用户闪到 /setup 初始页，必须先等待水合完成。
+  await whenStorageReady()
 
   const panelAllowed = isPanelAuthenticated()
   if (to.name === ROUTE_NAME.setup) {

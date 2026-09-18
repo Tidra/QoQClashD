@@ -62,6 +62,7 @@ export type Proxy = {
       alive: boolean
       history: History
     }
+
   >
   all?: string[]
   udp?: boolean
@@ -74,6 +75,29 @@ export type Proxy = {
   testUrl?: string
   'dialer-proxy'?: string
   'provider-name'?: string
+}
+
+export type ProxyGroupDraft = {
+  name: string
+  type: string
+  proxies: string[]
+  url?: string
+  interval?: number
+  timeout?: number
+  tolerance?: number
+  strategy?: string
+  minCount?: number
+  filter?: string
+  'exclude-filter'?: string
+  'default-selected'?: string
+  icon?: string
+  hidden?: boolean
+  lazy?: boolean
+}
+
+export type ProxyGroupMemberOption = {
+  name: string
+  kind: 'node' | 'group'
 }
 
 export type SubscriptionInfo = {

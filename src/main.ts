@@ -10,6 +10,8 @@ import './assets/main.css'
 import { applyCustomCSS, applyCustomThemes, applyKsuTheme } from './helper'
 import { i18n } from './i18n'
 import router from './router'
+import { whenStorageReady } from '@/helper/storage'
+import { startSubscriptionAutoUpdate } from '@/store/subscriptions'
 
 const isEdge = /Edg\//.test(navigator.userAgent)
 
@@ -31,3 +33,6 @@ const app = createApp(App)
 app.use(router)
 app.use(i18n)
 app.mount('#app')
+
+// 订阅自动更新：等存储水合完成后启动，避免用默认空数据误判。
+void whenStorageReady().then(() => startSubscriptionAutoUpdate())

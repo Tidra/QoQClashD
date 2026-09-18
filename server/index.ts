@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { extname, join, normalize } from 'node:path'
@@ -12,6 +12,36 @@ const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 const distDir = join(projectRoot, 'dist')
 const config = loadRuntimeConfig()
 process.env.DATA_DIR ||= config.dataDir
+
+// sql.js 把整个 SQLite 文件读进内存、写回时整文件覆盖，多个后端进程共享同一
+// dataDir 会互相踩踏（后 flush 的进程把对方写入抹掉），这里用锁文件禁止双开。
+const lockPath = join(config.dataDir, 'server.lock')
+const acquireDataLock = () => {
+  mkdirSync(config.dataDir, { recursive: true })
+  const pidAlive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  try {
+    const fd = openSync(lockPath, 'wx')
+    writeSync(fd, String(process.pid))
+    return
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+  const holder = Number(readFileSync(lockPath, 'utf8').trim())
+  if (holder && holder !== process.pid && pidAlive(holder)) {
+    console.error(`[qoqclashd] 已有后端进程 (pid ${holder}) 在使用数据目录 ${config.dataDir}`)
+    console.error('[qoqclashd] 多个后端共享同一个 SQLite 文件会互相覆盖数据，请先停掉另一个实例再启动。')
+    process.exit(1)
+  }
+  writeFileSync(lockPath, String(process.pid))
+}
+acquireDataLock()
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -148,6 +178,11 @@ const shutdown = async (signal: string) => {
   console.log(`[qoqclashd] received ${signal}, shutting down`)
   server.close()
   await agent.supervisor.dispose()
+  try {
+    unlinkSync(lockPath)
+  } catch {
+    // 锁文件可能已被清理
+  }
   process.exit(0)
 }
 

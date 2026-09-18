@@ -21,9 +21,13 @@
         <button type="button" class="btn btn-circle btn-sm" :title="$t('displaySettings')" @click="groupDisplaySettingsOpen = true">
           <WrenchScrewdriverIcon class="h-4 w-4" />
         </button>
-        <button type="button" class="btn btn-primary btn-sm" @click="openCreatePoolDialog">
+        <button type="button" class="btn btn-circle btn-sm" :title="groupViewMode === 'card' ? $t('tableMode') : $t('cardMode')" @click="groupViewMode = groupViewMode === 'card' ? 'table' : 'card'">
+          <TableCellsIcon v-if="groupViewMode === 'card'" class="h-4 w-4" />
+          <Squares2X2Icon v-else class="h-4 w-4" />
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" @click="openCreateGroup">
           <PlusIcon class="h-4 w-4" />
-          {{ $t('nodePoolAdd') }}
+          {{ $t('proxyGroupEditorAddGroup') }}
         </button>
       </template>
       <template v-else>
@@ -44,7 +48,7 @@
       </template>
     </NodePageHeader>
     <div
-      class="base-container m-3 min-h-0 flex-1"
+      class="base-container m-3 min-h-0 flex-1 overflow-auto backdrop-blur-none!"
       :class="((props.view === 'nodes' ? nodeViewMode : groupViewMode) === 'card') && 'p-3 md:p-4'"
     >
       <template v-if="props.view === 'nodes'">
@@ -77,18 +81,18 @@
             </div>
           </div>
         </div>
-        <div v-else class="table-glass min-h-full min-w-min overflow-x-auto pb-6">
+        <div v-else class="table-glass min-h-full min-w-min pb-6">
             <table class="table table-sm">
             <thead class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!">
               <tr>
-                <th>{{ $t('nodeName') }}</th>
-                <th v-if="nodeTableColumns.includes('type')">{{ $t('nodeType') }}</th>
-                <th v-if="nodeTableColumns.includes('server')">{{ $t('nodeServer') }}</th>
-                <th v-if="nodeTableColumns.includes('port')">{{ $t('nodePort') }}</th>
-                <th v-if="nodeTableColumns.includes('cipher')">{{ $t('nodeCipher') }}</th>
-                <th v-if="nodeTableColumns.includes('sni')">{{ $t('nodeSni') }}</th>
-                <th v-if="nodeTableColumns.includes('latency')">{{ $t('nodeLatency') }}</th>
-                <th class="text-right">{{ $t('actions') }}</th>
+                <th class="min-w-28">{{ $t('nodeName') }}</th>
+                <th v-if="nodeTableColumns.includes('type')" class="w-20 whitespace-nowrap">{{ $t('nodeType') }}</th>
+                <th v-if="nodeTableColumns.includes('server')" class="min-w-32">{{ $t('nodeServer') }}</th>
+                <th v-if="nodeTableColumns.includes('port')" class="w-16 whitespace-nowrap">{{ $t('nodePort') }}</th>
+                <th v-if="nodeTableColumns.includes('cipher')" class="w-28 whitespace-nowrap">{{ $t('nodeCipher') }}</th>
+                <th v-if="nodeTableColumns.includes('sni')" class="min-w-28">{{ $t('nodeSni') }}</th>
+                <th v-if="nodeTableColumns.includes('latency')" class="w-20 whitespace-nowrap">{{ $t('nodeLatency') }}</th>
+                <th class="sticky right-0 z-40 bg-base-100 text-right w-20 whitespace-nowrap">{{ $t('actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -100,17 +104,17 @@
                   </div>
                 </td>
               </tr>
-              <tr v-for="node in filteredNodes" :key="node.id" class="hover cursor-pointer" @click="editStandaloneNode(node)">
-                <td>{{ node.name }}</td>
-                <td v-if="nodeTableColumns.includes('type')">{{ node.type }}</td>
-                <td v-if="nodeTableColumns.includes('server')">{{ node.server }}</td>
-                <td v-if="nodeTableColumns.includes('port')">{{ node.port }}</td>
-                <td v-if="nodeTableColumns.includes('cipher')">{{ node.cipher || '—' }}</td>
-                <td v-if="nodeTableColumns.includes('sni')">{{ node.sni || '—' }}</td>
-                <td v-if="nodeTableColumns.includes('latency')">{{ latencyMap[node.name] ?? '—' }}<span v-if="latencyMap[node.name] !== undefined">ms</span></td>
-                <td class="text-right" @click.stop>
-                  <button type="button" class="btn btn-ghost btn-xs" @click="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
-                  <button type="button" class="btn btn-ghost btn-xs text-error" @click="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
+              <tr v-for="(node, nodeIndex) in filteredNodes" :key="node.id" class="hover group cursor-pointer" :class="nodeIndex % 2 === 0 && 'table-row-stripe'" @click="editStandaloneNode(node)">
+                <td class="max-w-44 truncate" :title="node.name">{{ node.name }}</td>
+                <td v-if="nodeTableColumns.includes('type')" class="whitespace-nowrap">{{ node.type }}</td>
+                <td v-if="nodeTableColumns.includes('server')" class="max-w-40 truncate" :title="node.server">{{ node.server }}</td>
+                <td v-if="nodeTableColumns.includes('port')" class="whitespace-nowrap">{{ node.port }}</td>
+                <td v-if="nodeTableColumns.includes('cipher')" class="max-w-28 truncate">{{ node.cipher || '—' }}</td>
+                <td v-if="nodeTableColumns.includes('sni')" class="max-w-40 truncate" :title="node.sni">{{ node.sni || '—' }}</td>
+                <td v-if="nodeTableColumns.includes('latency')" class="whitespace-nowrap">{{ latencyMap[node.name] ?? '—' }}<span v-if="latencyMap[node.name] !== undefined">ms</span></td>
+                <td class="pinned-td sticky right-0 z-10 group-hover:bg-base-200! text-right whitespace-nowrap" @click.stop>
+                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :title="$t('edit')" @click="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
+                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :title="$t('delete')" @click="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
                 </td>
               </tr>
             </tbody>
@@ -118,186 +122,160 @@
         </div>
       </template>
       <template v-else>
-      <!-- 加载中 -->
-      <div v-if="nodePoolsLoading" class="flex h-full items-center justify-center text-base-content/50">
-        <span class="loading loading-spinner loading-lg"></span>
-      </div>
       <!-- 空状态 -->
       <div
-        v-else-if="!pools.length"
+        v-if="!realGroups.length"
         class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center"
       >
-        <div class="text-base-content/60 mb-2 text-sm">{{ $t('nodePoolEmpty') }}</div>
-        <button type="button" class="btn btn-primary btn-sm" @click="openCreatePoolDialog">
+        <div class="text-base-content/60 mb-2 text-sm">{{ $t('proxyGroupEditorNoGroups') }}</div>
+        <button type="button" class="btn btn-primary btn-sm" @click="openCreateGroup">
           <PlusIcon class="h-4 w-4" />
-          {{ $t('nodePoolAdd') }}
+          {{ $t('proxyGroupEditorAddGroup') }}
         </button>
       </div>
 
-      <!-- 节点池列表 -->
-      <div v-else-if="groupViewMode === 'card'" class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <!-- 代理组卡片 -->
+      <div v-else-if="groupViewMode === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
         <div
-          v-for="pool in visiblePools"
-          :key="pool.id"
-          class="bg-base-200 hover:bg-base-300/50 rounded-md p-3 transition-colors hover:shadow-sm"
+          v-for="group in visibleRealGroups"
+          :key="group.name"
+          class="bg-base-200 hover:bg-base-300/50 flex flex-col gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
         >
-          <!-- 池标题 -->
-          <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div class="flex flex-wrap items-center gap-2">
-              <h2 class="truncate text-base font-medium">{{ pool.name || $t('proxyGroup') }}</h2>
-              <span class="badge" :class="pool.enabled ? 'badge-success' : 'badge-ghost'">
-                {{ pool.enabled ? $t('activeLabel') : $t('offline') }}
-              </span>
-              <span class="badge badge-ghost text-xs">{{ pool.nodes.length }} {{ $t('nodePoolNodes') }}</span>
-              <span v-if="pool.dedupe" class="badge badge-ghost text-xs">{{ $t('nodePoolDedupe') }}</span>
+          <div class="flex min-w-0 items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate font-medium">{{ group.name }}</span>
+                <span class="badge badge-info shrink-0 text-[10px]">{{ groupTypeLabel(group.type) }}</span>
+              </div>
+              <div class="text-base-content/60 mt-1 truncate text-xs">
+                {{ groupMemberTotal(group) }} {{ $t('proxyGroupEditorMembers') }}
+                <template v-if="isSelectableGroup(group)">
+                  · {{ $t('proxyGroupEditorCurrentSelected') }}:
+                  <span :class="group['default-selected'] ? 'text-base-content' : 'text-base-content/40'">
+                    {{ group['default-selected'] || '—' }}
+                  </span>
+                </template>
+              </div>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button type="button" class="btn btn-ghost btn-sm" @click="togglePool(pool.id)">
-                {{ pool.enabled ? $t('offline') : $t('online') }}
-              </button>
-              <button type="button" class="btn btn-ghost btn-sm" @click="openEditPoolDialog(pool)">
-                <PencilIcon class="h-4 w-4" />
-                {{ $t('edit') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm text-error"
-                @click="removePoolById(pool.id)"
-              >
-                <TrashIcon class="h-4 w-4" />
-                {{ $t('nodePoolRemove') }}
-              </button>
+            <div class="relative z-10 flex shrink-0 gap-0.5">
+              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click.stop="openEditGroup(group)"><PencilIcon class="h-3.5 w-3.5" /></button>
+              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :disabled="isProtectedGroup(group.name)" :title="$t('proxyGroupEditorDeleteGroup')" @click.stop="deleteRealGroup(group)"><TrashIcon class="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
-          <!-- 节点搜索 -->
-          <div class="mb-2 flex items-center gap-2">
-            <input
-              v-model="searchMap[pool.id]"
-              type="text"
-              class="input input-sm input-bordered flex-1"
-              :placeholder="$t('nodeSearchPlaceholder')"
-            />
+          <TextInput
+            v-model="groupMemberSearchMap[group.name]"
+            :placeholder="$t('proxyGroupEditorMemberFilter')"
+            clearable
+            class="input-sm min-w-0"
+          />
+
+          <div v-if="!filterGroupMembers(group).length" class="text-base-content/60 py-1 text-xs">
+            {{ $t('proxyGroupEditorNoMembers') }}
+          </div>
+          <div
+            v-else
+            :ref="(el) => measureGroupMembers(group.name, el)"
+            class="flex flex-wrap content-start gap-1"
+            :class="!groupExpandedMap[group.name] && 'max-h-13 overflow-hidden'"
+          >
             <button
+              v-for="member in filterGroupMembers(group)"
+              :key="member"
               type="button"
-              class="btn btn-ghost btn-sm"
-              :disabled="isTesting"
-              @click="testPoolLatency(pool)"
+              class="flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors"
+              :class="memberChipClass(group, member)"
+              :disabled="!isSelectableGroup(group)"
+              :title="memberTitle(group, member)"
+              @click="selectGroupMember(group, member)"
             >
-              <BoltIcon v-if="!isTesting" class="h-4 w-4" />
-              <span v-else class="loading loading-spinner loading-xs"></span>
-              {{ isTesting ? $t('latencyTesting') : $t('nodeTestAll') }}
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                :class="memberKind(member) === 'group' ? 'bg-warning' : memberKind(member) === 'node' ? 'bg-info' : 'bg-error'"
+              ></span>
+              <span class="min-w-0 truncate" :class="{ 'line-through': memberKind(member) === 'missing' }">{{ member }}</span>
+              <CheckIcon v-if="group['default-selected'] === member" class="h-3 w-3 shrink-0" />
             </button>
           </div>
-
-          <!-- 节点列表 -->
-          <div v-if="!getFilteredNodes(pool).length" class="text-base-content/60 py-2 text-sm">
-            {{ $t('nodePoolEmpty') }}
-          </div>
-          <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-            <div
-              v-for="node in getFilteredNodes(pool)"
-              :key="node.id"
-              class="bg-base-100/70 hover:bg-base-100 relative flex flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
-            >
-              <div class="min-w-0">
-                <div class="truncate text-sm font-medium">{{ node.name }}</div>
-                <div class="text-base-content/60 mt-1 truncate text-xs">{{ node.type }} · {{ node.server }}:{{ node.port }}</div>
-              </div>
-              <div class="flex w-full items-center justify-between gap-2">
-                <div class="flex shrink-0 gap-0.5">
-                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="openEditNodeDialog(pool, node)">
-                    <PencilIcon class="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeNodeById(pool.id, node.id)">
-                    <TrashIcon class="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class="badge badge-ghost h-5 min-h-5 shrink-0 cursor-pointer px-1.5 text-[10px]"
-                  :disabled="isTesting"
-                  @click.stop="testNode(node.name)"
-                >
-                  <span v-if="latencyMap[node.name] !== undefined">{{ latencyMap[node.name] ?? '—' }}ms</span>
-                  <template v-else><BoltIcon class="h-3 w-3" /> {{ $t('nodeTestLatency') }}</template>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- 添加节点按钮 -->
           <button
+            v-if="groupExpandedMap[group.name] || groupMembersOverflowMap[group.name]"
             type="button"
-            class="btn btn-ghost btn-sm mt-3"
-            @click="openCreateNodeDialog(pool)"
+            class="btn btn-ghost btn-xs self-start text-xs"
+            @click.stop="groupExpandedMap[group.name] = !groupExpandedMap[group.name]"
           >
-            <PlusIcon class="h-4 w-4" />
-            {{ $t('nodePoolAddNode') }}
+            {{ groupExpandedMap[group.name]
+              ? $t('proxyGroupEditorShowLess')
+              : $t('proxyGroupEditorShowAll', { count: filterGroupMembers(group).length }) }}
           </button>
         </div>
       </div>
-      <div v-else class="table-glass min-h-full min-w-min overflow-x-auto pb-6">
+
+      <!-- 代理组表格 -->
+      <div v-else class="table-glass min-h-full min-w-min pb-6">
         <table class="table table-sm">
-          <thead class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!"><tr><th>{{ $t('nodePoolName') }}</th><th>{{ $t('nodePoolNodes') }}</th><th>{{ $t('nodePoolEnabled') }}</th><th class="text-right">{{ $t('actions') }}</th></tr></thead>
+          <thead class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!">
+            <tr>
+              <th class="min-w-32">{{ $t('proxyGroupEditorGroup') }}</th>
+              <th v-if="groupTableColumns.includes('type')" class="w-24 whitespace-nowrap">{{ $t('proxyGroupEditorGroupType') }}</th>
+              <th v-if="groupTableColumns.includes('members')" class="w-20 whitespace-nowrap">{{ $t('proxyGroupEditorMembers') }}</th>
+              <th v-if="groupTableColumns.includes('currentSelected')" class="w-44 whitespace-nowrap">{{ $t('proxyGroupEditorCurrentSelected') }}</th>
+              <th class="sticky right-0 z-40 bg-base-100 text-right w-24 whitespace-nowrap">{{ $t('actions') }}</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-if="!visiblePools.length">
-              <td colspan="4" class="text-base-content/50 h-90">
+            <tr v-if="!visibleRealGroups.length">
+              <td :colspan="groupTableColumns.length + 2" class="text-base-content/50 h-90">
                 <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                   <BoltIcon class="h-10 w-10 opacity-60" />
-                  <div class="text-base">{{ $t('nodePoolEmpty') }}</div>
+                  <div class="text-base">{{ $t('proxyGroupEditorNoGroups') }}</div>
                 </div>
               </td>
             </tr>
-            <tr v-for="pool in visiblePools" :key="pool.id" class="hover">
-              <td>{{ pool.name }}</td><td>{{ pool.nodes.length }}</td><td>{{ pool.enabled ? $t('online') : $t('offline') }}</td>
-              <td class="text-right"><button type="button" class="btn btn-ghost btn-xs" @click="openEditPoolDialog(pool)"><PencilIcon class="h-3.5 w-3.5" /></button><button type="button" class="btn btn-ghost btn-xs text-error" @click="removePoolById(pool.id)"><TrashIcon class="h-3.5 w-3.5" /></button></td>
+            <tr v-for="(group, groupIndex) in visibleRealGroups" :key="group.name" class="hover group" :class="groupIndex % 2 === 0 && 'table-row-stripe'">
+              <td class="max-w-44 truncate" :title="group.name">{{ group.name }}</td>
+              <td v-if="groupTableColumns.includes('type')" class="whitespace-nowrap"><span class="badge badge-info badge-xs">{{ groupTypeLabel(group.type) }}</span></td>
+              <td v-if="groupTableColumns.includes('members')" class="whitespace-nowrap">{{ groupMemberTotal(group) }}</td>
+              <td v-if="groupTableColumns.includes('currentSelected')">
+                <SelectInput
+                  v-if="isSelectableGroup(group)"
+                  :model-value="group['default-selected'] ?? ''"
+                  :options="selectedMemberOptions(group)"
+                  searchable
+                  :search-placeholder="$t('proxyGroupEditorSearchOption')"
+                  :no-results-text="$t('proxyGroupEditorNoMatch')"
+                  class="select select-xs min-w-0 max-w-40"
+                  @change="setGroupSelected(group, $event)"
+                />
+                <span v-else class="text-base-content/40">—</span>
+              </td>
+              <td class="pinned-td sticky right-0 z-10 group-hover:bg-base-200! text-right whitespace-nowrap">
+                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click="openEditGroup(group)">
+                  <PencilIcon class="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error"
+                  :disabled="isProtectedGroup(group.name)"
+                  :title="$t('proxyGroupEditorDeleteGroup')"
+                  @click="deleteRealGroup(group)"
+                >
+                  <TrashIcon class="h-3.5 w-3.5" />
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
       </template>
-      <!-- 节点池 编辑/新建 弹窗 -->
-      <dialog ref="poolDialogRef" class="modal">
-        <div class="modal-box max-w-lg">
-          <h3 class="text-lg font-semibold">
-            {{ editingPoolId ? $t('nodePoolEditTitle') : $t('nodePoolAddTitle') }}
-          </h3>
-          <div class="mt-4 space-y-4">
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodePoolName') }}</span>
-              <input
-                v-model="poolForm.name"
-                type="text"
-                class="input input-bordered w-full"
-                :placeholder="$t('nodePoolName')"
-              />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('nodeType') }}</span>
-              <select
-                v-model="poolForm.dedupeStr"
-                class="select select-bordered w-full"
-                @change="poolForm.dedupe = poolForm.dedupeStr === 'dedupe'"
-              >
-                <option value="dedupe">{{ $t('nodePoolDedupe') }}</option>
-                <option value="noDedupe">{{ $t('nodePoolDedupe') ? 'No dedup' : 'No dedup' }}</option>
-              </select>
-            </label>
-            <label class="label cursor-pointer justify-start gap-3">
-              <input v-model="poolForm.enabled" type="checkbox" class="checkbox" />
-              <span class="label-text">{{ $t('nodePoolEnabled') }}</span>
-            </label>
-          </div>
-          <div class="modal-action">
-            <button type="button" class="btn btn-ghost" @click="closePoolDialog">{{ $t('cancel') }}</button>
-            <button type="button" class="btn btn-primary" @click="savePool">{{ $t('save') }}</button>
-          </div>
-        </div>
-        <form method="dialog" class="modal-backdrop">
-          <button @click="closePoolDialog">close</button>
-        </form>
-      </dialog>
+
+      <!-- 代理组 编辑/新建 弹窗 -->
+      <ProxyGroupEditor
+        v-model="groupEditorOpen"
+        :member-options="groupMemberOptions"
+        :initial="editingGroup ?? undefined"
+        @save="saveRealGroup"
+      />
+      <!-- 节点池 编辑/新建 弹窗（已移除，改用 ProxyGroupEditor） -->
       <DialogWrapper v-model="nodeDisplaySettingsOpen" :title="$t('displaySettings')" box-class="max-w-lg">
         <div class="flex flex-col gap-3 text-sm">
           <div class="settings-grid">
@@ -383,6 +361,61 @@
                   { label: t('tableMode'), value: 'table' },
                 ]"
               />
+            </div>
+            <div class="flex flex-col">
+              <div class="m-4 mb-2">{{ $t('customTableColumns') }}</div>
+              <div class="grid grid-cols-2 gap-3 px-4 pb-2">
+                <div class="flex flex-col gap-2">
+                  <div class="text-base-content/60 flex items-center justify-between px-1 text-xs">
+                    <span>{{ $t('activeLabel') }}</span>
+                    <span class="badge badge-ghost badge-sm">{{ groupTableColumns.length }}</span>
+                  </div>
+                  <Draggable
+                    class="bg-base-200 flex min-h-24 flex-col gap-2 rounded-lg p-2"
+                    v-model="groupTableColumns"
+                    group="group-list"
+                    :animation="150"
+                    ghost-class="ghost"
+                    :item-key="(id: string) => id"
+                  >
+                    <template #item="{ element }">
+                      <div class="btn btn-sm bg-base-100 flex-nowrap justify-between gap-1 shadow-sm" :title="getGroupColumnLabel(element)">
+                        <Bars2Icon class="h-4 w-4 shrink-0 cursor-move opacity-40" />
+                        <span class="truncate">{{ getGroupColumnLabel(element) }}</span>
+                        <button class="opacity-50 transition-opacity hover:opacity-100" @click.stop="removeGroupColumn(element)">
+                          <XMarkIcon class="h-4 w-4 shrink-0" />
+                        </button>
+                      </div>
+                    </template>
+                    <template #footer>
+                      <div v-if="!groupTableColumns.length" class="text-base-content/40 flex h-16 items-center justify-center px-2 text-center text-xs">
+                        {{ $t('dragOrClickToAdd') }}
+                      </div>
+                    </template>
+                  </Draggable>
+                </div>
+                <div class="flex flex-col gap-2">
+                  <div class="text-base-content/60 flex items-center justify-between px-1 text-xs">
+                    <span>{{ $t('availableLabel') }}</span>
+                    <span class="badge badge-ghost badge-sm">{{ restOfGroupColumns.length }}</span>
+                  </div>
+                  <Draggable
+                    class="border-base-300 flex min-h-24 flex-col gap-2 rounded-lg border border-dashed p-2"
+                    v-model="restOfGroupColumns"
+                    group="group-list"
+                    :animation="150"
+                    ghost-class="ghost"
+                    :item-key="(id: string) => id"
+                  >
+                    <template #item="{ element }">
+                      <button class="btn btn-sm btn-ghost border-base-300/60 flex-nowrap justify-between gap-1" :title="getGroupColumnLabel(element)" @click="addGroupColumn(element)">
+                        <span class="truncate">{{ getGroupColumnLabel(element) }}</span>
+                        <PlusIcon class="h-4 w-4 shrink-0 opacity-50" />
+                      </button>
+                    </template>
+                  </Draggable>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -488,7 +521,11 @@
           <button
             type="button"
             class="btn btn-sm btn-primary"
-            :disabled="!nodeForm.name.trim() || !nodeForm.server.trim() || !nodeForm.port"
+            :disabled="
+              nodeInputMode === 'yaml'
+                ? !nodeYaml.trim()
+                : !nodeForm.name.trim() || !nodeForm.server.trim() || !nodeForm.port
+            "
             @click="saveNode"
           >
             {{ $t('save') }}
@@ -514,25 +551,25 @@ import {
   addNodePool,
   nodePools,
   removeNode,
-  removeNodePool,
-  toggleNodePool,
   updateNode,
-  updateNodePool,
   buildMergedNodeList,
 } from '@/store/nodePool'
 import type { CustomNode, NodePool } from '@/store/nodePool'
 import { useLatency } from '@/composables/useLatency'
-import { Bars2Icon, BoltIcon, PencilIcon, PlusIcon, Squares2X2Icon, TableCellsIcon, TrashIcon, WrenchScrewdriverIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { Bars2Icon, BoltIcon, CheckIcon, PencilIcon, PlusIcon, Squares2X2Icon, TableCellsIcon, TrashIcon, WrenchScrewdriverIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import Draggable from 'vuedraggable'
 import NodePageHeader from '@/components/proxies/NodePageHeader.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SegmentedControl, { type SegmentOption } from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
 import TextInput from '@/components/common/TextInput.vue'
-import { computed, reactive, ref, watch } from 'vue'
+import ProxyGroupEditor from '@/components/proxies/ProxyGroupEditor.vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStorage } from '@vueuse/core'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { isProtectedGroup, proxyGroups, removeProxyGroup, resolveGroupMembers, setProxyGroupDefaultSelected, upsertProxyGroup } from '@/store/proxyGroups'
+import type { ProxyGroupDraft, ProxyGroupMemberOption } from '@/types'
 
 const { t } = useI18n()
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
@@ -574,14 +611,165 @@ const pruneNodeFormForType = () => {
 const pools = computed(() => nodePools.value)
 const nodePoolsLoading = computed(() => !!(nodePools as unknown as { loading?: boolean }).loading)
 const poolSearch = ref('')
-const visiblePools = computed(() => {
+
+// 代理组草稿保存在面板数据库，应用配置时再由配置应用流程生成核心 YAML。
+
+const realGroups = computed(() => proxyGroups.value)
+
+// 代理组编辑弹窗
+const groupEditorOpen = ref(false)
+const editingGroup = ref<ProxyGroupDraft | null>(null)
+
+const openCreateGroup = () => {
+  editingGroup.value = null
+  groupEditorOpen.value = true
+}
+
+const openEditGroup = (g: ProxyGroupDraft) => {
+  editingGroup.value = g
+  groupEditorOpen.value = true
+}
+
+const closeGroupEditor = () => {
+  groupEditorOpen.value = false
+  editingGroup.value = null
+}
+
+const normalizeGroupTypeForConfig = (type: string) => {
+  const value = type.toLowerCase()
+  if (value === 'selector' || value === 'select') return 'select'
+  if (value === 'urltest' || value === 'url-test') return 'url-test'
+  if (value === 'loadbalance' || value === 'load-balance') return 'load-balance'
+  return value
+}
+
+const saveRealGroup = async (payload: ProxyGroupDraft) => {
+  const originalName = editingGroup.value?.name
+  upsertProxyGroup({ ...payload, type: normalizeGroupTypeForConfig(payload.type) }, originalName)
+  closeGroupEditor()
+  showNotification({ content: t('proxyGroupEditorApplied'), type: 'alert-success' })
+}
+
+const deleteRealGroup = async (g: ProxyGroupDraft) => {
+  if (isProtectedGroup(g.name)) return
+  const { showConfirmDialog } = await import('@/helper/confirmDialog')
+  const result = await showConfirmDialog({
+    message: t('proxyGroupEditorDeleteConfirm', { name: g.name }),
+    confirmButtonClass: 'btn-error',
+  })
+  if (!result.confirmed) return
+  removeProxyGroup(g.name)
+  showNotification({ content: t('proxyGroupEditorDeleteApplied'), type: 'alert-success' })
+}
+
+// 过滤后的真实代理组(供 groups 视图渲染)
+const visibleRealGroups = computed(() => {
   const keyword = poolSearch.value.trim().toLowerCase()
-  if (!keyword) return pools.value
-  return pools.value.filter((pool) => pool.name.toLowerCase().includes(keyword))
+  if (!keyword) return realGroups.value
+  return realGroups.value.filter((g) => g.name.toLowerCase().includes(keyword))
 })
-const allNodes = computed(() => buildMergedNodeList())
-const nodeSearch = ref('')
+
+// 每个组的成员过滤关键字(用 ref 对象避免直接 v-model 到 computed)
+const groupMemberSearchMap = reactive<Record<string, string>>({})
+const filterGroupMembers = (group: ProxyGroupDraft): string[] => {
+  const members = resolveGroupMembers(group, allNodes.value.map((node) => node.name))
+  const keyword = (groupMemberSearchMap[group.name] || '').trim().toLowerCase()
+  if (!keyword) return members
+  return members.filter((m) => m.toLowerCase().includes(keyword))
+}
+
+// 卡片成员折叠：收起时容器限高两行，实测溢出才显示「展开全部」
+const groupExpandedMap = reactive<Record<string, boolean>>({})
+const groupMembersOverflowMap = reactive<Record<string, boolean>>({})
+const measureGroupMembers = (name: string, el: unknown) => {
+  const div = el as HTMLElement | null
+  if (!div) return
+  // ref 回调时子树可能尚未插入文档，此时高度全是 0，要等 DOM 提交后再量
+  void nextTick(() => {
+    const overflow = div.scrollHeight > div.clientHeight + 1
+    if (groupMembersOverflowMap[name] !== overflow) {
+      groupMembersOverflowMap[name] = overflow
+    }
+  })
+}
+
+// 分组类型标签
+const groupTypeLabel = (type: string) => {
+  const normalized = type.toLowerCase()
+  switch (normalized) {
+    case 'selector':
+    case 'select':
+      return t('proxyGroupEditorGroupTypeSelect')
+    case 'urltest':
+    case 'url-test':
+      return t('proxyGroupEditorGroupTypeUrlTest')
+    case 'fallback':
+      return t('proxyGroupEditorGroupTypeFallback')
+    case 'loadbalance':
+    case 'load-balance':
+      return t('proxyGroupEditorGroupTypeLoadBalance')
+    default:
+      return type
+  }
+}
+
+// 成员来源：节点 / 其他代理组 / 已失效（引用名不存在）
+const memberKind = (name: string): 'node' | 'group' | 'missing' => {
+  if (nodeNameSet.value.has(name)) return 'node'
+  if (realGroups.value.some((group) => group.name === name)) return 'group'
+  return 'missing'
+}
+const nodeNameSet = computed(() => new Set(allNodes.value.map((node) => node.name)))
+const isSelectableGroup = (group: ProxyGroupDraft) =>
+  normalizeGroupTypeForConfig(group.type) === 'select'
+const selectGroupMember = (group: ProxyGroupDraft, member: string) => {
+  if (!isSelectableGroup(group) || memberKind(member) === 'missing') return
+  const next = group['default-selected'] === member ? undefined : member
+  setProxyGroupDefaultSelected(group.name, next)
+  showNotification({
+    content: next ? t('proxyGroupEditorSelectedMember', { name: member }) : t('proxyGroupEditorDeselectedMember'),
+    type: 'alert-success',
+  })
+}
+// 表格成员数/当前选择下拉：筛选条件展开后与显式成员合并计数
+const groupMemberTotal = (group: ProxyGroupDraft) =>
+  resolveGroupMembers(group, [...nodeNameSet.value]).length
+const selectedMemberOptions = (group: ProxyGroupDraft) => [
+  { value: '', label: '--' },
+  ...resolveGroupMembers(group, [...nodeNameSet.value]).map((name) => ({ value: name, label: name })),
+]
+const setGroupSelected = (group: ProxyGroupDraft, member: string) => {
+  if (member === (group['default-selected'] ?? '')) return
+  setProxyGroupDefaultSelected(group.name, member || undefined)
+  if (member) {
+    showNotification({ content: t('proxyGroupEditorSelectedMember', { name: member }), type: 'alert-success' })
+  }
+}
+const memberChipClass = (group: ProxyGroupDraft, member: string) => {
+  if (memberKind(member) === 'missing') return 'bg-base-100/70 text-error cursor-not-allowed'
+  if (!isSelectableGroup(group)) return 'bg-base-100/70'
+  if (group['default-selected'] === member) return 'bg-primary/15 text-primary ring-primary/40 ring-1 hover:bg-primary/25'
+  return 'bg-base-100/70 hover:bg-base-100 cursor-pointer'
+}
+const memberTitle = (group: ProxyGroupDraft, member: string) => {
+  const kind = memberKind(member)
+  const kindLabel = kind === 'group' ? t('memberKindGroup') : kind === 'node' ? t('memberKindNode') : t('memberKindMissing')
+  if (kind === 'missing') return kindLabel
+  if (isSelectableGroup(group)) {
+    return group['default-selected'] === member ? t('proxyGroupEditorClickToDeselect') : t('proxyGroupEditorClickToSelect')
+  }
+  return kindLabel
+}
+const groupMemberOptions = computed<ProxyGroupMemberOption[]>(() => {
+  const options: ProxyGroupMemberOption[] = [...nodeNameSet.value].map((name) => ({ name, kind: 'node' as const }))
+  for (const group of realGroups.value) {
+    if (!nodeNameSet.value.has(group.name)) options.push({ name: group.name, kind: 'group' })
+  }
+  return options
+})
 const nodeViewMode = useStorage<'card' | 'table'>('nodeViewMode', 'card')
+const nodeSearch = ref('')
+const allNodes = computed(() => buildMergedNodeList())
 const groupViewMode = useStorage<'card' | 'table'>('groupViewMode', 'card')
 const nodeDisplaySettingsOpen = ref(false)
 const groupDisplaySettingsOpen = ref(false)
@@ -594,6 +782,27 @@ const nodeTableColumnOptions = [
   { key: 'sni', label: t('nodeSni') },
   { key: 'latency', label: t('nodeLatency') },
 ]
+
+const groupTableColumns = useStorage<string[]>('groupTableColumns', ['type', 'members', 'currentSelected'])
+const groupTableColumnOptions = [
+  { key: 'type', label: t('proxyGroupEditorGroupType') },
+  { key: 'members', label: t('proxyGroupEditorMembers') },
+  { key: 'currentSelected', label: t('proxyGroupEditorCurrentSelected') },
+]
+const restOfGroupColumns = computed({
+  get: () => groupTableColumnOptions.filter((opt) => !groupTableColumns.value.includes(opt.key)).map((opt) => opt.key),
+  set: () => {},
+})
+const getGroupColumnLabel = (key: string) =>
+  groupTableColumnOptions.find((opt) => opt.key === key)?.label || key
+const removeGroupColumn = (key: string) => {
+  groupTableColumns.value = groupTableColumns.value.filter((col) => col !== key)
+}
+const addGroupColumn = (key: string) => {
+  if (!groupTableColumns.value.includes(key)) {
+    groupTableColumns.value = [...groupTableColumns.value, key]
+  }
+}
 
 const restOfNodeColumns = computed({
   get() {
@@ -625,20 +834,6 @@ const filteredNodes = computed(() => {
   )
 })
 
-// 每个池的搜索关键字（用 ref 对象避免直接 v-model 到 computed）
-const searchMap = reactive<Record<string, string>>({})
-
-const getFilteredNodes = (pool: NodePool): CustomNode[] => {
-  const keyword = (searchMap[pool.id] || '').trim().toLowerCase()
-  if (!keyword) return pool.nodes
-  return pool.nodes.filter(
-    (n) =>
-      n.name.toLowerCase().includes(keyword) ||
-      n.server.includes(keyword) ||
-      n.type.toLowerCase().includes(keyword),
-  )
-}
-
 const openCreateNodeFromHeader = () => {
   const pool = pools.value[0] || addNodePool({
     name: t('nodePoolName'),
@@ -657,73 +852,6 @@ const editStandaloneNode = (node: CustomNode) => {
 const removeStandaloneNode = (node: CustomNode) => {
   const pool = pools.value.find((item) => item.nodes.some((candidate) => candidate.id === node.id))
   if (pool) void removeNodeById(pool.id, node.id)
-}
-
-// ── 节点池 弹窗 ──────────────────────────────────────────────────
-const poolDialogRef = ref<HTMLDialogElement | null>(null)
-const editingPoolId = ref<string | null>(null)
-const poolForm = ref({
-  name: '',
-  enabled: true,
-  dedupe: true,
-  dedupeStr: 'dedupe',
-})
-
-const openCreatePoolDialog = () => {
-  editingPoolId.value = null
-  poolForm.value = { name: '', enabled: true, dedupe: true, dedupeStr: 'dedupe' }
-  poolDialogRef.value?.showModal()
-}
-
-const openEditPoolDialog = (pool: NodePool) => {
-  editingPoolId.value = pool.id
-  poolForm.value = {
-    name: pool.name,
-    enabled: pool.enabled,
-    dedupe: pool.dedupe,
-    dedupeStr: pool.dedupe ? 'dedupe' : 'noDedupe',
-  }
-  poolDialogRef.value?.showModal()
-}
-
-const closePoolDialog = () => poolDialogRef.value?.close()
-
-const savePool = () => {
-  const name = poolForm.value.name.trim()
-  if (!name) {
-    showNotification({ content: 'invalidURL', type: 'alert-error' })
-    return
-  }
-  if (editingPoolId.value) {
-    updateNodePool(editingPoolId.value, {
-      name,
-      enabled: poolForm.value.enabled,
-      dedupe: poolForm.value.dedupe,
-    })
-  } else {
-    addNodePool({
-      name,
-      enabled: poolForm.value.enabled,
-      dedupe: poolForm.value.dedupe,
-      nodes: [],
-    })
-  }
-  showNotification({ content: 'poolSaveSuccess', type: 'alert-success' })
-  closePoolDialog()
-}
-
-const togglePool = (id: string) => toggleNodePool(id)
-
-const removePoolById = async (id: string) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('nodePoolDeleteConfirm'),
-    confirmButtonClass: 'btn-error',
-  })
-  if (result.confirmed) {
-    removeNodePool(id)
-    showNotification({ content: 'poolDeleteSuccess', type: 'alert-success' })
-  }
 }
 
 // ── 节点 弹窗 ───────────────────────────────────────────────────
@@ -800,7 +928,7 @@ const pruneEmptyNodeForm = (form: NodeFormData): Record<string, unknown> => {
   for (const key of ['cipher', 'password', 'sni', 'fingerprint', 'wsPath', 'grpcServiceName'] as const) {
     if (!out[key]) delete out[key]
   }
-  if (!out.alpn?.length) delete out.alpn
+  if (!(out.alpn as unknown[] | undefined)?.length) delete out.alpn
   if (!out.tfo) delete out.tfo
   if (!out.skipCertVerification) delete out.skipCertVerification
   return out
@@ -876,15 +1004,6 @@ const removeNodeById = async (poolId: string, nodeId: string) => {
 // ── 延迟测试 ─────────────────────────────────────────────────────
 const testNode = async (nodeName: string) => {
   await testNodeLatency(nodeName)
-}
-
-const testPoolLatency = async (pool: NodePool) => {
-  const poolNodes = pool.nodes.map((n) => n.name)
-  const nodes = poolNodes.filter(Boolean)
-  // 通过 useLatency 的 testNodeLatency 逐个测（无批量 API 时降级为串行）
-  for (const name of nodes) {
-    await testNodeLatency(name)
-  }
 }
 
 const testAllStandaloneNodes = async () => {
