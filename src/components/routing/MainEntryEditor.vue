@@ -84,6 +84,14 @@
             placeholder="—"
           />
         </div>
+        <div class="setting-item">
+          <div class="setting-item-label shrink-0!">{{ $t('allowLan') }}</div>
+          <input
+            v-model="form.allowLan"
+            type="checkbox"
+            class="toggle toggle-sm"
+          />
+        </div>
       </div>
 
       <div class="border-base-300/60 bg-base-200/40 rounded-md border p-3">
@@ -213,6 +221,7 @@ const createForm = (initial: MainEntryDraft) => ({
   mixedPort: initial['mixed-port'],
   redirPort: initial['redir-port'],
   tproxyPort: initial['tproxy-port'],
+  allowLan: initial['allow-lan'] ?? false,
   tunEnable: initial.tun?.enable ?? false,
   tunStack: initial.tun?.stack ?? 'gvisor',
   tunDevice: initial.tun?.device ?? '',
@@ -264,6 +273,7 @@ const buildDraft = (): MainEntryDraft => {
     ...(f.mixedPort ? { 'mixed-port': f.mixedPort } : {}),
     ...(f.redirPort ? { 'redir-port': f.redirPort } : {}),
     ...(f.tproxyPort ? { 'tproxy-port': f.tproxyPort } : {}),
+    'allow-lan': f.allowLan,
     tun: {
       enable: f.tunEnable,
       stack: f.tunStack,
@@ -291,6 +301,7 @@ const applyYaml = (yamlText: string): boolean => {
       'mixed-port': toPort(parsed['mixed-port']),
       'redir-port': toPort(parsed['redir-port']),
       'tproxy-port': toPort(parsed['tproxy-port']),
+      'allow-lan': parsed['allow-lan'] === true,
       tun: {
         enable: tun?.enable === true,
         stack: typeof tun?.stack === 'string' ? tun.stack : 'gvisor',

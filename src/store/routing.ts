@@ -28,13 +28,14 @@ export type TunSettings = {
   'dns-hijack'?: string[]
 }
 
-/** 主入口：对应 config.yaml 顶层端口属性 + tun 块（仅此处可配置 TUN） */
+/** 主入口：对应 config.yaml 顶层端口属性 + allow-lan + tun 块（仅此处可配置 TUN） */
 export type MainEntryDraft = {
   port?: number
   'socks-port'?: number
   'mixed-port'?: number
   'redir-port'?: number
   'tproxy-port'?: number
+  'allow-lan'?: boolean
   tun: TunSettings
 }
 
@@ -186,6 +187,7 @@ export const defaultTunSettings = (): TunSettings => ({
 
 export const defaultMainEntry = (): MainEntryDraft => ({
   'mixed-port': 7890,
+  'allow-lan': false,
   tun: defaultTunSettings(),
 })
 
@@ -344,6 +346,9 @@ export const seedRoutingDefaults = () => {
 
   if (!routingMainEntry.value?.tun) {
     routingMainEntry.value = defaultMainEntry()
+  } else if (routingMainEntry.value['allow-lan'] === undefined) {
+    // 旧草稿没有 allow-lan 字段：按 mihomo 默认 false 回填
+    routingMainEntry.value = { ...routingMainEntry.value, 'allow-lan': false }
   }
 
   if (!routingRules.value.some((item) => item.id === DEFAULT_RULE_ID)) {

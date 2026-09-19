@@ -243,108 +243,6 @@
       </div>
     </template>
 
-    <template v-if="hasVisibleNetworkSettings">
-      <div class="settings-section-label">{{ $t('settingsSectionNetworkListening') }}</div>
-      <div class="settings-grid">
-        <SettingItem
-          :setting-key="k.ports"
-          class="py-3"
-        >
-          <div class="flex w-full flex-col gap-3">
-            <div class="setting-item-label">{{ $t('ports') }}</div>
-            <BackendPortsGrid />
-          </div>
-        </SettingItem>
-        <SettingItem
-          :setting-key="k.tunMode"
-          :when="!!configs?.tun && !activeBackend?.disableTunMode"
-        >
-          <div class="setting-item-label">{{ $t('tunMode') }}</div>
-          <input
-            v-model="configs!.tun.enable"
-            class="toggle"
-            type="checkbox"
-            @change="hanlderTunModeChange"
-          />
-        </SettingItem>
-        <SettingItem
-          v-if="configs?.tun.enable"
-          :setting-key="k.tunConfig"
-          :when="!activeBackend?.disableTunMode"
-          class="py-3"
-        >
-          <div class="setting-item-label mb-2">{{ $t('tunConfig') }}</div>
-          <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('tunStack') }}</span>
-              <select
-                v-model="tunForm.stack"
-                class="select select-bordered select-sm w-full"
-                @change="handleTunConfigChange"
-              >
-                <option value="gvisor">gvisor</option>
-                <option value="system">system</option>
-                <option value="mixed">mixed</option>
-              </select>
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('tunMtu') }}</span>
-              <input
-                v-model.number="tunForm.mtu"
-                type="number"
-                min="1280"
-                max="9000"
-                class="input input-bordered input-sm w-full"
-                @change="handleTunConfigChange"
-              />
-            </label>
-            <label class="form-control w-full">
-              <span class="label-text mb-1">{{ $t('tunDevice') }}</span>
-              <input
-                v-model="tunForm.device"
-                type="text"
-                class="input input-bordered input-sm w-full"
-                :placeholder="$t('tunDevice')"
-                @change="handleTunConfigChange"
-              />
-            </label>
-            <div class="flex flex-col gap-2">
-              <label class="label cursor-pointer justify-start gap-3">
-                <input
-                  v-model="tunForm.autoDetectInterface"
-                  type="checkbox"
-                  class="checkbox"
-                  @change="handleTunConfigChange"
-                />
-                <span class="label-text">{{ $t('tunAutoDetectInterface') }}</span>
-              </label>
-              <label class="label cursor-pointer justify-start gap-3">
-                <input
-                  v-model="tunForm.strictRoute"
-                  type="checkbox"
-                  class="checkbox"
-                  @change="handleTunConfigChange"
-                />
-                <span class="label-text">{{ $t('tunStrictRoute') }}</span>
-              </label>
-            </div>
-          </div>
-        </SettingItem>
-        <SettingItem
-          :setting-key="k.allowLan"
-          :when="!!configs"
-        >
-          <div class="setting-item-label">{{ $t('allowLan') }}</div>
-          <input
-            v-model="configs!['allow-lan']"
-            class="toggle"
-            type="checkbox"
-            @change="handlerAllowLanChange"
-          />
-        </SettingItem>
-      </div>
-    </template>
-
     <template v-if="showDnsQuery">
       <div class="settings-section-label">{{ $t('settingsSectionDiagnostics') }}</div>
       <div class="settings-grid">
@@ -361,13 +259,10 @@
 </template>
 
 <script setup lang="ts">
-import { can } from '@/assembly/backend'
-import { configs, updateConfigs } from '@/assembly/config'
 import { startBackendSession } from '@/assembly/session'
 import { isCoreUpdateAvailable, probeActiveBackend } from '@/assembly/version'
 import SelectInput from '@/components/common/SelectInput.vue'
 import type { SelectOption } from '@/components/common/SelectInput.vue'
-import BackendPortsGrid from '@/components/settings/backend/BackendPortsGrid.vue'
 import DnsQuery from '@/components/settings/backend/DnsQuery.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import { backendActions } from '@/composables/backendActions'
@@ -383,8 +278,7 @@ import { notifyRequestError } from '@/helper/requestError'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowPathIcon, LockClosedIcon } from '@heroicons/vue/24/outline'
 import ConfigYamlModal from './ConfigYamlModal.vue'
@@ -616,57 +510,12 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => clearInterval(kernelPollTimer))
 
-const isVisiblePorts = useIsSettingVisible(k.ports)
-const isVisibleTunMode = useIsSettingVisible(k.tunMode)
-const isVisibleAllowLan = useIsSettingVisible(k.allowLan)
 const isVisibleDnsQuery = useIsSettingVisible(k.DNSQuery)
-const canShowTunMode = computed(
-  () => isVisibleTunMode.value && !activeBackend.value?.disableTunMode,
-)
 
-// TUN advanced form (mirrors configs.tun fields)
-const tunForm = reactive({
-  stack: 'gvisor',
-  mtu: 1500,
-  device: '',
-  autoDetectInterface: true,
-  strictRoute: false,
-})
-
-watch(
-  () => configs.value?.tun,
-  (tun) => {
-    if (!tun) return
-    const t = tun as unknown as Record<string, unknown>
-    tunForm.stack = (t.stack as string) ?? 'gvisor'
-    tunForm.mtu = (t.mtu as number) ?? 1500
-    tunForm.device = (t.device as string) ?? ''
-    tunForm.autoDetectInterface = (t['auto-detect-interface'] as boolean) ?? true
-    tunForm.strictRoute = (t['strict-route'] as boolean) ?? false
-  },
-  { immediate: true },
-)
-
-const handleTunConfigChange = async () => {
-  if (!configs.value?.tun) return
-  configs.value.tun = {
-    ...configs.value.tun,
-    stack: tunForm.stack,
-    mtu: tunForm.mtu,
-    device: tunForm.device || undefined,
-    'auto-detect-interface': tunForm.autoDetectInterface,
-    'strict-route': tunForm.strictRoute,
-  }
-  try {
-    await updateConfigs({ tun: configs.value.tun })
-  } catch (error) {
-    notifyRequestError(error)
-  }
-}
-
-// 升级/重启内核与检查更新等已在上方内核管理卡里给出；更新配置入口整体移除
-// （配置编辑在节点页/分流中心进行），设置页运维区只留重载配置一行特殊布局 + 其余图标动作。
-const kernelCardKeys = new Set([k.upgradeCore, k.restartCore, k.updateConfigs])
+// 升级/重启内核与检查更新等已在上方内核管理卡里给出；网络监听（端口/TUN/allow-lan）
+// 已整体移到分流中心「入口」的主入口，更新配置入口也移除（配置编辑在节点页/分流中心进行），
+// 设置页运维区只留重载配置一行特殊布局 + 其余图标动作。
+const kernelCardKeys = new Set([k.upgradeCore, k.restartCore])
 const reloadConfigsAction = computed(() =>
   backendActions.value.find((action) => action.key === k.reloadConfigs),
 )
@@ -681,32 +530,10 @@ const hasVisibleActions = computed(
     coreOperations.value.some((action) => isSettingVisible(action.key)),
 )
 const showDnsQuery = isVisibleDnsQuery
-const hasVisibleNetworkSettings = computed(
-  () =>
-    can('configPatch') &&
-    !!configs.value &&
-    (isVisiblePorts.value ||
-      (!!configs.value.tun && canShowTunMode.value) ||
-      isVisibleAllowLan.value),
-)
 const handlerCheckUpgradeCoreChange = () => {
   if (!checkUpgradeCore.value) {
     autoUpgradeCore.value = false
     isCoreUpdateAvailable.value = false
-  }
-}
-const hanlderTunModeChange = async () => {
-  try {
-    await updateConfigs({ tun: { enable: configs.value?.tun.enable } })
-  } catch (error) {
-    notifyRequestError(error)
-  }
-}
-const handlerAllowLanChange = async () => {
-  try {
-    await updateConfigs({ ['allow-lan']: configs.value?.['allow-lan'] })
-  } catch (error) {
-    notifyRequestError(error)
   }
 }
 </script>

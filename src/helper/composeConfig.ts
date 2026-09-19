@@ -139,6 +139,7 @@ export const composeConfigYaml = (): string => {
     const value = main[key]
     if (value) config[key] = value
   }
+  if (main['allow-lan']) config['allow-lan'] = true
   if (main.tun) config.tun = tunToEntry(main.tun)
 
   if (nodes.length) config.proxies = nodes.map(nodeToProxy)

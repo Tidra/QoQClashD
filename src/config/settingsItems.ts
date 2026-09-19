@@ -53,11 +53,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         section: 'settingsSectionCoreOperations',
       },
       {
-        key: `${SETTINGS_MENU_KEY.backend}.updateConfigs`,
-        label: 'updateConfigs',
-        section: 'settingsSectionCoreOperations',
-      },
-      {
         key: `${SETTINGS_MENU_KEY.backend}.updateGeoDatabase`,
         label: 'updateGeoDatabase',
         section: 'settingsSectionCoreOperations',
@@ -82,26 +77,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'DNSQuery',
         section: 'settingsSectionDiagnostics',
         keywords: ['dns'],
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.backend}.ports`,
-        label: 'ports',
-        section: 'settingsSectionNetworkListening',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.backend}.tunMode`,
-        label: 'tunMode',
-        section: 'settingsSectionNetworkListening',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.backend}.tunConfig`,
-        label: 'tunConfig',
-        section: 'settingsSectionNetworkListening',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.backend}.allowLan`,
-        label: 'allowLan',
-        section: 'settingsSectionNetworkListening',
       },
       {
         key: `${SETTINGS_MENU_KEY.backend}.checkCoreUpgrade`,

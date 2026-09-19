@@ -6,7 +6,7 @@
 // 进行中状态放在模块级而不是组件里:两个入口打的是同一个后端,从侧边栏点了重启,
 // 设置页那颗按钮也该是转的,更不该被并发点第二次。
 //
-// 需要先收集参数的两个动作(升级内核、更新配置)走弹窗。弹窗的开关也在这里,
+// 需要先收集参数的动作(升级内核)走弹窗。弹窗的开关也在这里,
 // 弹窗本体挂在 App.vue —— 侧边栏常驻但设置页不常驻,挂在设置页里侧边栏就拉不起来。
 import { can } from '@/assembly/backend'
 import {
@@ -31,7 +31,6 @@ import {
   ArrowPathIcon,
   ArrowPathRoundedSquareIcon,
   ArrowUpCircleIcon,
-  PencilSquareIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, ref, type Component, type Ref } from 'vue'
@@ -52,7 +51,6 @@ export type BackendAction = {
 }
 
 export const showUpgradeCoreModal = ref(false)
-export const showUpdateConfigModal = ref(false)
 
 const reloadAll = () => {
   fetchConfigs()
@@ -157,17 +155,6 @@ export const backendActions = computed<BackendAction[]>(() => {
           'reloadConfigsSuccess',
           reloadAll,
         ),
-    })
-  }
-
-  if (can('updateConfigs')) {
-    actions.push({
-      key: k.updateConfigs,
-      label: 'updateConfigs',
-      icon: PencilSquareIcon,
-      running: false,
-      opensModal: true,
-      run: () => (showUpdateConfigModal.value = true),
     })
   }
 

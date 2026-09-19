@@ -55,97 +55,138 @@
     </CtrlsBar>
 
     <div
-      class="base-container m-3 min-h-0 flex-1 overflow-auto backdrop-blur-none!"
-      :class="viewMode === 'card' && 'p-3 md:p-4'"
+      class="base-container m-3 min-h-0 flex-1 backdrop-blur-none!"
+      :class="[
+        viewMode === 'card' && 'p-3 md:p-4',
+        inboundsTableMode ? 'flex flex-col overflow-hidden' : 'overflow-auto',
+      ]"
     >
-      <!-- ── 入口（主入口 + listeners 子入口） ─────────────────── -->
+      <!-- ── 入口（网络监听主入口 + listeners 子入口） ───────────── -->
       <template v-if="tab === 'inbounds'">
+        <!-- 网络监听横幅：原设置页「网络监听」并入此处，主入口草稿是唯一数据源；
+             卡片上的开关直接双写（草稿 + 已连接内核时 PATCH 生效）。 -->
+        <div
+          class="bg-base-200/60 border-base-300/60 mb-2 flex shrink-0 flex-col gap-2 rounded-lg border p-3"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="font-medium">{{ $t('networkListening') }}</span>
+            <span class="badge badge-warning shrink-0 text-[10px]">{{ $t('builtinBadge') }}</span>
+            <span class="text-base-content/50 truncate text-xs">{{ $t('mainEntry') }}</span>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm ml-auto shrink-0"
+              :title="$t('mainEntryEditTitle')"
+              @click="mainEntryEditorOpen = true"
+            >
+              <PencilIcon class="h-3.5 w-3.5" />
+              <span>{{ $t('edit') }}</span>
+            </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span
+              v-for="chip in mainEntryPortChips"
+              :key="chip.key"
+              class="badge badge-md gap-0.5 border font-mono text-xs"
+              :class="chip.port ? 'border-base-300 bg-base-100' : 'badge-ghost opacity-60'"
+              :title="chip.port ? `${chip.label} :${chip.port}` : `${chip.label} —`"
+            >
+              {{ chip.label }} {{ chip.port ? `:${chip.port}` : '—' }}
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+            <label class="flex cursor-pointer items-center gap-2">
+              <span class="text-base-content/70">{{ $t('tunMode') }}</span>
+              <input
+                type="checkbox"
+                class="toggle toggle-sm"
+                :checked="!!mainEntry.tun?.enable"
+                @change="toggleMainEntryTun"
+              />
+              <span
+                v-if="mainEntry.tun?.enable"
+                class="badge badge-ghost badge-sm"
+                >{{ mainEntry.tun.stack }}</span
+              >
+            </label>
+            <label class="flex cursor-pointer items-center gap-2">
+              <span class="text-base-content/70">{{ $t('allowLan') }}</span>
+              <input
+                type="checkbox"
+                class="toggle toggle-sm"
+                :checked="!!mainEntry['allow-lan']"
+                @change="toggleMainEntryAllowLan"
+              />
+            </label>
+            <span
+              v-if="!kernelPatchable"
+              class="text-base-content/40 ml-auto truncate"
+              >{{ $t('networkListeningDraftHint') }}</span
+            >
+          </div>
+        </div>
         <div
           v-if="viewMode === 'card'"
           class="flex flex-col gap-2"
         >
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
-            <div
-              class="bg-base-200 hover:bg-base-300/50 flex min-w-0 flex-col gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm"
-            >
-              <div class="flex w-full min-w-0 items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-1">
-                    <span class="min-w-0 truncate font-medium">{{ $t('mainEntry') }}</span>
-                    <span class="badge badge-warning shrink-0 text-[10px]">{{
-                      $t('builtinBadge')
-                    }}</span>
-                  </div>
-                  <div
-                    class="text-base-content/60 mt-1 truncate text-xs"
-                    :title="mainEntryPortsText"
-                  >
-                    {{ mainEntryPortsText || $t('mainEntryNoPorts') }}
-                  </div>
-                  <div class="text-base-content/60 mt-1 flex items-center gap-1 truncate text-xs">
-                    TUN:
-                    <span
-                      class="badge badge-xs"
-                      :class="mainEntry.tun?.enable ? 'badge-success' : 'badge-ghost'"
-                      >{{ mainEntry.tun?.enable }}</span
-                    >
-                    <template v-if="mainEntry.tun?.enable">· {{ mainEntry.tun.stack }}</template>
-                  </div>
-                </div>
-              </div>
-              <div class="relative z-10 flex shrink-0 gap-0.5">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                  :title="$t('mainEntryEditTitle')"
-                  @click.stop="mainEntryEditorOpen = true"
-                >
-                  <PencilIcon class="h-3.5 w-3.5" />
-                </button>
-              </div>
+          <!-- 子入口：通宽行卡，与上方网络监听横幅同款边框/端口 chip，类型色点区分协议 -->
+          <div
+            v-for="inbound in filteredInbounds"
+            :key="inbound.id"
+            class="bg-base-200/60 hover:bg-base-300/40 border-base-300/60 flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors hover:shadow-sm"
+            @click="openEditInbound(inbound)"
+          >
+            <div class="flex w-56 min-w-0 shrink-0 items-center gap-2">
+              <span
+                class="h-2 w-2 shrink-0 rounded-full"
+                :class="inboundTypeStyle(inbound.type).dot"
+              />
+              <span class="min-w-0 truncate font-medium">{{ inbound.name }}</span>
+              <span
+                class="badge shrink-0 border-0 text-[10px]"
+                :class="inboundTypeStyle(inbound.type).badge"
+                >{{ inbound.type }}</span
+              >
+            </div>
+            <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+              <span
+                class="badge badge-md border-base-300 bg-base-100 font-mono text-xs"
+                :title="`${$t('port')} :${inbound.port || '—'}`"
+                >:{{ inbound.port || '—' }}</span
+              >
+              <span
+                class="badge badge-md badge-ghost text-[10px]"
+                :title="$t('inboundListen')"
+                >{{ inbound.listen || '0.0.0.0' }}</span
+              >
+              <span
+                v-if="inbound.udp"
+                class="badge badge-md badge-ghost text-[10px]"
+                >UDP</span
+              >
             </div>
             <div
-              v-for="inbound in filteredInbounds"
-              :key="inbound.id"
-              class="bg-base-200 hover:bg-base-300/50 flex min-w-0 cursor-pointer flex-col gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm"
-              @click="openEditInbound(inbound)"
+              v-if="inbound.proxy || inbound.rule"
+              class="text-base-content/60 min-w-0 flex-1 truncate text-right text-xs"
             >
-              <div class="flex w-full min-w-0 items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-1">
-                    <span class="min-w-0 truncate font-medium">{{ inbound.name }}</span>
-                    <span class="badge badge-info shrink-0 text-[10px]">{{ inbound.type }}</span>
-                  </div>
-                  <div class="text-base-content/60 mt-1 truncate text-xs">
-                    :{{ inbound.port || '—' }} · {{ inbound.listen || '0.0.0.0'
-                    }}<template v-if="inbound.udp"> · UDP</template>
-                  </div>
-                  <div
-                    v-if="inbound.proxy || inbound.rule"
-                    class="text-base-content/60 mt-1 truncate text-xs"
-                  >
-                    {{ inbound.proxy || ruleLabel(inbound.rule) }}
-                  </div>
-                </div>
-              </div>
-              <div class="relative z-10 flex shrink-0 gap-0.5">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                  :title="$t('edit')"
-                  @click.stop="openEditInbound(inbound)"
-                >
-                  <PencilIcon class="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
-                  :title="$t('delete')"
-                  @click.stop="confirmDeleteInbound(inbound)"
-                >
-                  <TrashIcon class="h-3.5 w-3.5" />
-                </button>
-              </div>
+              {{ inbound.proxy || ruleLabel(inbound.rule) }}
+            </div>
+            <div class="relative z-10 ml-auto flex shrink-0 gap-0.5">
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                :title="$t('edit')"
+                @click.stop="openEditInbound(inbound)"
+              >
+                <PencilIcon class="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost text-error h-6 min-h-6 w-6 p-0"
+                :title="$t('delete')"
+                @click.stop="confirmDeleteInbound(inbound)"
+              >
+                <TrashIcon class="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
           <div
@@ -164,14 +205,14 @@
         </div>
         <div
           v-else
-          class="table-glass min-h-full min-w-min pb-6"
+          class="table-glass min-h-0 min-w-0 flex-1 overflow-auto pb-6"
         >
           <table class="table-sm table">
             <thead
               class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!"
             >
               <tr>
-                <th class="min-w-32">{{ $t('name') }}</th>
+                <th class="w-40">{{ $t('name') }}</th>
                 <th
                   v-if="inboundColumns.includes('type')"
                   class="w-24 whitespace-nowrap"
@@ -180,13 +221,13 @@
                 </th>
                 <th
                   v-if="inboundColumns.includes('port')"
-                  class="min-w-24 whitespace-nowrap"
+                  class="w-20 whitespace-nowrap"
                 >
                   {{ $t('port') }}
                 </th>
                 <th
                   v-if="inboundColumns.includes('listen')"
-                  class="min-w-24"
+                  class="w-24"
                 >
                   {{ $t('inboundListen') }}
                 </th>
@@ -198,19 +239,19 @@
                 </th>
                 <th
                   v-if="inboundColumns.includes('rule')"
-                  class="min-w-24"
+                  class="min-w-0"
                 >
                   {{ $t('inboundSubRule') }}
                 </th>
                 <th
                   v-if="inboundColumns.includes('proxy')"
-                  class="min-w-24"
+                  class="min-w-0"
                 >
                   {{ $t('inboundFixedProxy') }}
                 </th>
                 <th
                   v-if="inboundColumns.includes('tun')"
-                  class="w-28 whitespace-nowrap"
+                  class="w-20 whitespace-nowrap"
                 >
                   {{ $t('tunSettings') }}
                 </th>
@@ -220,70 +261,6 @@
               </tr>
             </thead>
             <tbody>
-              <tr class="hover group table-row-stripe">
-                <td class="max-w-44 truncate">
-                  {{ $t('mainEntry') }}
-                  <span class="badge badge-warning badge-xs ml-1">{{ $t('builtinBadge') }}</span>
-                </td>
-                <td
-                  v-if="inboundColumns.includes('type')"
-                  class="whitespace-nowrap"
-                >
-                  —
-                </td>
-                <td
-                  v-if="inboundColumns.includes('port')"
-                  class="max-w-52 truncate font-mono text-xs"
-                  :title="mainEntryPortsText"
-                >
-                  {{ mainEntryPortsText || '—' }}
-                </td>
-                <td
-                  v-if="inboundColumns.includes('listen')"
-                  class="whitespace-nowrap"
-                >
-                  —
-                </td>
-                <td
-                  v-if="inboundColumns.includes('udp')"
-                  class="whitespace-nowrap"
-                >
-                  —
-                </td>
-                <td
-                  v-if="inboundColumns.includes('rule')"
-                  class="whitespace-nowrap"
-                >
-                  —
-                </td>
-                <td
-                  v-if="inboundColumns.includes('proxy')"
-                  class="whitespace-nowrap"
-                >
-                  —
-                </td>
-                <td
-                  v-if="inboundColumns.includes('tun')"
-                  class="whitespace-nowrap"
-                >
-                  <span
-                    class="badge badge-xs"
-                    :class="mainEntry.tun?.enable ? 'badge-success' : 'badge-ghost'"
-                    >{{ mainEntry.tun?.enable }}</span
-                  >
-                  <template v-if="mainEntry.tun?.enable"> · {{ mainEntry.tun.stack }}</template>
-                </td>
-                <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                    :title="$t('mainEntryEditTitle')"
-                    @click="mainEntryEditorOpen = true"
-                  >
-                    <PencilIcon class="h-3.5 w-3.5" />
-                  </button>
-                </td>
-              </tr>
               <tr
                 v-for="(inbound, index) in filteredInbounds"
                 :key="inbound.id"
@@ -294,17 +271,27 @@
                   class="max-w-44 truncate"
                   :title="inbound.name"
                 >
-                  {{ inbound.name }}
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span
+                      class="h-1.5 w-1.5 shrink-0 rounded-full"
+                      :class="inboundTypeStyle(inbound.type).dot"
+                    />
+                    <span class="truncate">{{ inbound.name }}</span>
+                  </span>
                 </td>
                 <td
                   v-if="inboundColumns.includes('type')"
                   class="whitespace-nowrap"
                 >
-                  {{ inbound.type }}
+                  <span
+                    class="badge badge-xs border-0"
+                    :class="inboundTypeStyle(inbound.type).badge"
+                    >{{ inbound.type }}</span
+                  >
                 </td>
                 <td
                   v-if="inboundColumns.includes('port')"
-                  class="whitespace-nowrap"
+                  class="font-mono whitespace-nowrap"
                 >
                   {{ inbound.port || '—' }}
                 </td>
@@ -986,6 +973,8 @@ import {
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import Draggable from 'vuedraggable'
+import { can } from '@/assembly/backend'
+import { updateConfigs } from '@/assembly/config'
 import CtrlsBar from '@/components/common/CtrlsBar.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -997,6 +986,7 @@ import RuleListEditor, { type RuleListRow } from '@/components/routing/RuleListE
 import RuleProviderEditor from '@/components/routing/RuleProviderEditor.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
+import { notifyRequestError } from '@/helper/requestError'
 import { useStorage } from '@/helper/storage'
 import { buildMergedNodeList } from '@/store/nodePool'
 import { proxyGroups } from '@/store/proxyGroups'
@@ -1189,27 +1179,93 @@ const ruleProviderNameList = computed(() => routingRuleProviders.value.map((p) =
 /** listeners 的 rule 可填主规则名 rules 或子规则名 */
 const ruleLabel = (rule?: string) => (rule === 'rules' ? t('inboundMainRuleOption') : (rule ?? ''))
 
-// ── 主入口（顶层端口 + TUN） ───────────────────────────────────
+// ── 主入口（网络监听：顶层端口 + allow-lan + TUN） ─────────────
 const mainEntry = computed(() => routingMainEntry.value as MainEntryDraft)
 const mainEntryEditorOpen = ref(false)
 
-const MAIN_PORT_LABELS: [keyof MainEntryDraft, string][] = [
-  ['port', 'http'],
-  ['socks-port', 'socks'],
-  ['mixed-port', 'mixed'],
-  ['redir-port', 'redir'],
-  ['tproxy-port', 'tproxy'],
-]
+// 内核已连接且支持 PATCH /configs 时才即时生效；否则改动只进草稿，启动时生效
+const kernelPatchable = computed(() => can('configPatch'))
 
-const mainEntryPortsText = computed(() =>
-  MAIN_PORT_LABELS.flatMap(([key, label]) => {
+// 入口 tab 的表格模式：横幅固定、仅表格区域滚动（横向溢出也不带走横幅）
+const inboundsTableMode = computed(() => tab.value === 'inbounds' && viewMode.value === 'table')
+
+const MAIN_PORT_KEYS = ['mixed-port', 'port', 'socks-port', 'redir-port', 'tproxy-port'] as const
+
+const PORT_LABEL_KEYS: Record<(typeof MAIN_PORT_KEYS)[number], string> = {
+  'mixed-port': 'portMixed',
+  port: 'portHttp',
+  'socks-port': 'portSocks',
+  'redir-port': 'portRedir',
+  'tproxy-port': 'portTproxy',
+}
+
+const mainEntryPortChips = computed(() =>
+  MAIN_PORT_KEYS.map((key) => {
     const value = mainEntry.value[key]
-    return typeof value === 'number' && value > 0 ? [`${label} :${value}`] : []
-  }).join(' · '),
+    return {
+      key,
+      label: t(PORT_LABEL_KEYS[key]),
+      port: typeof value === 'number' && value > 0 ? value : undefined,
+    }
+  }),
 )
 
-const saveMainEntry = (payload: MainEntryDraft) => {
+// 主题里 secondary/accent 是灰色，这里只用有区分度的语义色
+const INBOUND_TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
+  mixed: { dot: 'bg-success', badge: 'badge-success' },
+  http: { dot: 'bg-warning', badge: 'badge-warning' },
+  socks: { dot: 'bg-info', badge: 'badge-info' },
+  redirect: { dot: 'bg-error', badge: 'badge-error' },
+  tproxy: { dot: 'bg-primary', badge: 'badge-primary' },
+}
+const inboundTypeStyle = (type: string) =>
+  INBOUND_TYPE_STYLES[type] ?? { dot: 'bg-base-content/40', badge: 'badge-ghost' }
+
+const patchMainEntryRuntime = async (entry: MainEntryDraft) => {
+  if (!kernelPatchable.value) return
+  const body: Record<string, string | boolean | object | number> = {}
+  for (const key of MAIN_PORT_KEYS) {
+    const value = entry[key]
+    if (typeof value === 'number') body[key] = value
+  }
+  if (typeof entry['allow-lan'] === 'boolean') body['allow-lan'] = entry['allow-lan']
+  if (entry.tun) body.tun = entry.tun
+  try {
+    await updateConfigs(body)
+  } catch (error) {
+    notifyRequestError(error)
+  }
+}
+
+const toggleMainEntryTun = async (event: Event) => {
+  const enable = (event.target as HTMLInputElement).checked
+  const next: MainEntryDraft = { ...mainEntry.value, tun: { ...mainEntry.value.tun, enable } }
+  upsertRoutingMainEntry(next)
+  if (kernelPatchable.value) {
+    try {
+      await updateConfigs({ tun: { enable } })
+    } catch (error) {
+      notifyRequestError(error)
+    }
+  }
+}
+
+const toggleMainEntryAllowLan = async (event: Event) => {
+  const allowLan = (event.target as HTMLInputElement).checked
+  const next: MainEntryDraft = { ...mainEntry.value, 'allow-lan': allowLan }
+  upsertRoutingMainEntry(next)
+  if (kernelPatchable.value) {
+    try {
+      await updateConfigs({ 'allow-lan': allowLan })
+    } catch (error) {
+      notifyRequestError(error)
+    }
+  }
+}
+
+const saveMainEntry = async (payload: MainEntryDraft) => {
   upsertRoutingMainEntry(payload)
+  await patchMainEntryRuntime(payload)
   showNotification({ content: 'routingSaved', type: 'alert-success' })
 }
 
