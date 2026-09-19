@@ -70,9 +70,9 @@ const getRenderProxyProviders = () => {
 
 export const disableProxiesPageScroll = ref(false)
 
-export const renderProxyGroups = computed(getRenderProxyGroups)
+const renderProxyGroups = computed(getRenderProxyGroups)
 
-export const renderProxyProviders = computed(getRenderProxyProviders)
+const renderProxyProviders = computed(getRenderProxyProviders)
 
 export const renderProxiesPageItems = computed(() => {
   if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {

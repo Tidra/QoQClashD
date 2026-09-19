@@ -8,7 +8,7 @@ export type SearchTextPart = {
   matched: boolean
 }
 
-export const toSearchRegexes = (filter: string): RegExp[] | null => {
+const toSearchRegexes = (filter: string): RegExp[] | null => {
   const normalizedFilter = filter.trim()
 
   if (!normalizedFilter) {

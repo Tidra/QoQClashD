@@ -8,8 +8,8 @@ import { computed, watch } from 'vue'
 export const VIRTUAL_ALL = '__all__'
 export const VIRTUAL_UNCAT = '__uncat__'
 
-export const BUILTIN_STRATEGY_ID = 'builtin-strategy'
-export const BUILTIN_NODES_ID = 'builtin-nodes'
+const BUILTIN_STRATEGY_ID = 'builtin-strategy'
+const BUILTIN_NODES_ID = 'builtin-nodes'
 
 const REGION_BUCKETS = [
   { code: 'HK', pattern: /(?:^|[-_\s])(HKG|HK|HongKong|香港)(?:$|[-_\s])/i },
@@ -40,7 +40,11 @@ export const buildRegionSuggestionFolders = (groupNames: string[]): Folder[] => 
   }
 
   return [...buckets.entries()]
-    .sort(([left], [right]) => REGION_BUCKETS.findIndex((entry) => entry.code === left) - REGION_BUCKETS.findIndex((entry) => entry.code === right))
+    .sort(
+      ([left], [right]) =>
+        REGION_BUCKETS.findIndex((entry) => entry.code === left) -
+        REGION_BUCKETS.findIndex((entry) => entry.code === right),
+    )
     .map(([code, members]) => ({
       id: uuid(),
       name: code,
@@ -76,14 +80,9 @@ const defaultState = (): FolderState => ({
   seeded: false,
 })
 
-export const folderState = useStorage<FolderState>(
-  'config/proxy-folders',
-  defaultState(),
-  localStorage,
-  {
-    mergeDefaults: true,
-  },
-)
+const folderState = useStorage<FolderState>('config/proxy-folders', defaultState(), localStorage, {
+  mergeDefaults: true,
+})
 
 const seedDefaultFolders = () => {
   if (folderState.value.seeded) return
@@ -162,7 +161,7 @@ export const groupMatchesFolderRule = (groupName: string, folderId: string): boo
   return folderRuleMatch(groupName, f.rules)
 }
 
-export const foldersOfGroup = (groupName: string): string[] => {
+const foldersOfGroup = (groupName: string): string[] => {
   const result: string[] = []
   for (const f of sortedFolders.value) {
     const manual = f.manualIncludes.includes(groupName)
@@ -172,7 +171,7 @@ export const foldersOfGroup = (groupName: string): string[] => {
   return result
 }
 
-export const groupsByFolder = computed(() => {
+const groupsByFolder = computed(() => {
   const map = new Map<string, string[]>()
   for (const name of proxyGroupList.value) {
     const ids = foldersOfGroup(name)

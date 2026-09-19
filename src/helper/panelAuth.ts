@@ -39,15 +39,6 @@ export const setPanelPassword = (password: string) => {
   panelAuthenticated.value = false
 }
 
-export const clearPanelAuthState = () => {
-  panelAuthenticated.value = false
-}
-
-// The panel should never be usable without a configured password. The first run
-// is required to set one, and afterwards every dashboard entry is gated behind a
-// successful login. This matches the product requirement for a real panel lock.
-export const isPanelAuthRequired = () => true
-
 export const isPanelAuthenticated = () => {
   return panelAuthenticated.value
 }

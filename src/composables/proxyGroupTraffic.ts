@@ -8,7 +8,7 @@ import { getConnectionChains } from '@/helper'
 import { activeConnections } from '@/store/connections'
 import { computed } from 'vue'
 
-export const downloadSpeedByProxyGroup = computed(() => {
+const downloadSpeedByProxyGroup = computed(() => {
   const speedMap = new Map<string, number>()
 
   for (const connection of activeConnections.value) {

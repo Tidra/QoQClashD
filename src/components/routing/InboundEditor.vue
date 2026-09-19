@@ -132,10 +132,10 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import SegmentedControl, { type SegmentOption } from '@/components/common/SegmentedControl.vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
-import { showNotification } from '@/helper/notification'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { useDualInputMode } from '@/composables/dualInputMode'
+import { parse as parseYaml } from 'yaml'
 import { INBOUND_TYPES, RULE_TARGET_ACTIONS } from '@/store/routing'
 import type { InboundDraft } from '@/store/routing'
 
@@ -171,12 +171,6 @@ const createForm = (initial?: InboundDraft) => ({
 })
 
 const form = ref(createForm(props.initial))
-const inputMode = ref<'form' | 'yaml'>('form')
-const inboundYaml = ref('')
-const inputModeOptions = computed<SegmentOption[]>(() => [
-  { value: 'form', label: t('formMode') },
-  { value: 'yaml', label: t('dualModeYaml') },
-])
 
 const typeOptions = INBOUND_TYPES.map((type) => ({ value: type, label: type }))
 const ruleOptions = computed(() => [
@@ -201,8 +195,7 @@ const proxyOptions = computed(() => [
 
 const resetForm = () => {
   form.value = createForm(props.initial)
-  inputMode.value = 'form'
-  inboundYaml.value = ''
+  resetInputMode()
 }
 
 watch(
@@ -256,27 +249,24 @@ const applyYaml = (yamlText: string): boolean => {
   }
 }
 
-const switchInputMode = (mode: 'form' | 'yaml') => {
-  if (mode === 'yaml') {
-    inboundYaml.value = stringifyYaml(buildYamlObject(), { indent: 2 })
-  } else if (!applyYaml(inboundYaml.value)) {
-    showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-    return
-  }
-  inputMode.value = mode
-}
+const {
+  inputMode,
+  inputModeOptions,
+  switchInputMode,
+  resetInputMode,
+  commitYaml,
+  yamlText: inboundYaml,
+} = useDualInputMode({
+  buildYaml: () => buildYamlObject(),
+  applyYaml: (yamlText) => applyYaml(yamlText),
+})
 
 const handleModelValueUpdate = (value: boolean | undefined) => {
   if (value !== undefined) emits('update:modelValue', value)
 }
 
 const saveInbound = () => {
-  if (inputMode.value === 'yaml') {
-    if (!applyYaml(inboundYaml.value)) {
-      showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-      return
-    }
-  }
+  if (inputMode.value === 'yaml' && !commitYaml()) return
   const draft = buildDraft()
   if (!draft.name || !draft.port) return
   emits('save', draft)

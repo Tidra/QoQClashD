@@ -14,7 +14,7 @@ import type { RouteLocationNormalized } from 'vue-router'
 
 type SlideDirection = 'slide-left' | 'slide-right' | ''
 
-export type SettingsPaneTransition = 'push' | 'pop' | ''
+type SettingsPaneTransition = 'push' | 'pop' | ''
 
 /**
  * 导航层级。设置页的二级页面是用 `?section=` 表达的而不是子路由,

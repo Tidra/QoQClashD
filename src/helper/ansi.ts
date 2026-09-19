@@ -196,8 +196,6 @@ const applyAnsiCodes = (state: AnsiState, codes: number[], colorScheme: ThemeCol
   }
 }
 
-export const stripAnsi = (value: string) => value.replace(ANSI_PATTERN, '')
-
 export const parseAnsiText = (value: string, colorScheme: ThemeColorScheme): AnsiTextSegment[] => {
   const segments: AnsiTextSegment[] = []
   const state: AnsiState = {}

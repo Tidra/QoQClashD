@@ -8,10 +8,8 @@ import {
   lowLatency,
   mediumLatency,
   proxyChainDirection,
-  splitOverviewPage,
 } from '@/store/settings'
 import type { Connection } from '@/types'
-import * as ipaddr from 'ipaddr.js'
 import { computed } from 'vue'
 
 const PROXY_GROUP_TYPES = new Set<string>(Object.values(PROXY_TYPE))
@@ -51,9 +49,6 @@ export const getConnectionRulePayload = (connection: Connection) =>
 export const getConnectionSourceIP = (connection: Connection) =>
   connectionAccessor().sourceIP(connection)
 
-export const getConnectionSourcePort = (connection: Connection) =>
-  connectionAccessor().sourcePort(connection)
-
 export const getConnectionNetwork = (connection: Connection) =>
   connectionAccessor().network(connection)
 
@@ -77,18 +72,6 @@ export const getNetworkTypeFromConnection = (connection: Connection) =>
 
 export const getInboundUserFromConnection = (connection: Connection) =>
   connectionAccessor().inboundUser(connection)
-
-export const getDestinationTypeFromConnection = (connection: Connection) => {
-  const destination = getDestinationFromConnection(connection)
-
-  if (ipaddr.IPv4.isIPv4(destination)) {
-    return 'IPv4'
-  } else if (ipaddr.IPv6.isIPv6(destination)) {
-    return 'IPv6'
-  } else {
-    return 'FQDN'
-  }
-}
 
 export const getChainsStringFromConnection = (connection: Connection) => {
   const chains = [...getConnectionChains(connection)]

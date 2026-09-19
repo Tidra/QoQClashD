@@ -211,40 +211,9 @@ const sortBuiltinLast = (rules: RoutingRuleDraft[]) => [
   ...rules.filter((rule) => rule.builtin),
 ]
 
-export const upsertRoutingRule = (rule: RoutingRuleDraft, originalId?: string) => {
-  const index = routingRules.value.findIndex((item) => item.id === (originalId ?? rule.id))
-  const next = [...routingRules.value]
-  if (index === -1) next.push(rule)
-  else next[index] = rule
-  routingRules.value = sortBuiltinLast(next)
-}
-
 /** 整表替换主规则（规则列表编辑器保存用）；内置默认规则仍然垫底 */
 export const setRoutingRules = (rules: RoutingRuleDraft[]) => {
   routingRules.value = sortBuiltinLast(rules)
-}
-
-/** 默认规则不可删除 */
-export const removeRoutingRule = (id: string) => {
-  routingRules.value = routingRules.value.filter((item) => item.id !== id || item.builtin)
-}
-
-export const toggleRoutingRule = (id: string) => {
-  routingRules.value = routingRules.value.map((item) =>
-    item.id === id ? { ...item, enabled: !item.enabled } : item,
-  )
-}
-
-/** 上移/下移：默认规则固定在末尾，不参与移动 */
-export const moveRoutingRule = (id: string, offset: -1 | 1) => {
-  const list = [...routingRules.value]
-  const index = list.findIndex((item) => item.id === id)
-  const target = index + offset
-  if (index === -1 || target < 0 || target >= list.length) return
-  if (list[index].builtin || list[target].builtin) return
-  const [rule] = list.splice(index, 1)
-  list.splice(target, 0, rule)
-  routingRules.value = list
 }
 
 export const upsertSubRule = (sub: SubRuleDraft, originalName?: string) => {

@@ -86,7 +86,7 @@ export const KEYBOARD_SHORTCUTS = {
   },
 } as const
 
-export const normalizeShortcutKey = (key: string) => {
+const normalizeShortcutKey = (key: string) => {
   if (key === ' ') {
     return 'Space'
   }
@@ -104,11 +104,11 @@ export const normalizeShortcutKey = (key: string) => {
   return normalizedKey
 }
 
-export const isModifierOnlyKey = (key: string) => {
+const isModifierOnlyKey = (key: string) => {
   return ['Control', 'Meta', 'Alt', 'Shift'].includes(key)
 }
 
-export const normalizeShortcut = (shortcut: string) => {
+const normalizeShortcut = (shortcut: string) => {
   if (!shortcut) {
     return ''
   }

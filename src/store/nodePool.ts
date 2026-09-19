@@ -59,11 +59,6 @@ export function removeNodePool(id: string) {
   nodePools.value = nodePools.value.filter((p) => p.id !== id)
 }
 
-export function toggleNodePool(id: string) {
-  const pool = nodePools.value.find((p) => p.id === id)
-  if (pool) pool.enabled = !pool.enabled
-}
-
 export function addNode(poolId: string, node: Omit<CustomNode, 'id'>) {
   const pool = nodePools.value.find((p) => p.id === poolId)
   if (!pool) return
@@ -116,28 +111,4 @@ export function buildMergedNodeList(): CustomNode[] {
   }
 
   return merged
-}
-
-export function buildNodePoolGroup(pool: NodePool) {
-  return {
-    name: pool.name,
-    type: 'selector',
-    nodes: pool.nodes.map((node) => node.name),
-  }
-}
-
-export function nodePoolsAsGroupNames() {
-  return nodePoolList.value.map((pool) => pool.name)
-}
-
-export function findNodeByName(name: string) {
-  for (const pool of nodePoolList.value) {
-    const node = pool.nodes.find((n) => n.name === name)
-    if (node) return node
-  }
-  return null
-}
-
-export function totalNodeCount() {
-  return nodePoolList.value.reduce((sum, pool) => sum + pool.nodes.length, 0)
 }

@@ -127,11 +127,3 @@ export function useStorage<T>(
 
   return state
 }
-
-export function useDbStorage<T>(
-  key: MaybeRefOrGetter<string>,
-  defaults: MaybeRefOrGetter<T>,
-  options?: UseStorageOptions<T>,
-) {
-  return useStorage(key, defaults, undefined, options)
-}

@@ -44,7 +44,7 @@ const parseIP = (ip: string): ipaddr.IPv4 | ipaddr.IPv6 | null => {
 // Skip addresses that cannot provide a useful client hostname. Private and
 // public unicast addresses remain eligible; the configured core DNS decides
 // which reverse zones it can answer.
-export function isResolvableIP(ip: string | undefined): boolean {
+function isResolvableIP(ip: string | undefined): boolean {
   if (!ip) return false
 
   const address = parseIP(ip)
@@ -53,7 +53,7 @@ export function isResolvableIP(ip: string | undefined): boolean {
   return !['unspecified', 'loopback', 'linkLocal'].includes(address.range())
 }
 
-export function reverseName(ip: string): string | null {
+function reverseName(ip: string): string | null {
   const address = parseIP(ip)
   if (!address) return null
 

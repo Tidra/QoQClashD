@@ -103,7 +103,7 @@ const backgroundDB = useIndexedDB('base64')
 const backgroundImageKey = 'background-image'
 
 export const saveBase64ToIndexedDB = (val: string) => backgroundDB.put(backgroundImageKey, val)
-export const getBase64FromIndexedDB = () => backgroundDB.get(backgroundImageKey)
+const getBase64FromIndexedDB = () => backgroundDB.get(backgroundImageKey)
 export const deleteBase64FromIndexedDB = () => backgroundDB.clear()
 export const LOCAL_IMAGE = 'local-image'
 
@@ -139,7 +139,7 @@ const backgroundImageSource = computed(() => {
 })
 
 // 只有背景图实际加载成功时,才启用自定义背景相关的透明度和毛玻璃样式。
-export const backgroundImageLoaded = ref(false)
+const backgroundImageLoaded = ref(false)
 type BackgroundLoadCache = Record<string, { date: string }>
 const backgroundLoadCache = useStorage<BackgroundLoadCache>(
   'cache/custom-background-image-load-status',

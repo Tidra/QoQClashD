@@ -40,14 +40,14 @@ const DIAGNOSIS_MESSAGE_KEY: Record<ConnectionDiagnosis, string> = {
 }
 
 // 浏览器把跨域网络错误说成什么,各家不一样。
-export const isOpaqueNetworkError = (message: string) =>
+const isOpaqueNetworkError = (message: string) =>
   message.includes('Failed to fetch') || // Chromium
   message.includes('Load failed') || // WebKit
   message.includes('NetworkError') || // Firefox
   message.includes('Network Error') // axios 的包装
 
 // 浏览器把环回地址当作安全上下文,HTTPS 页面访问它不触发混合内容拦截。
-export const isLoopbackHost = (hostname: string) =>
+const isLoopbackHost = (hostname: string) =>
   hostname === 'localhost' ||
   hostname.endsWith('.localhost') ||
   hostname === '[::1]' ||
@@ -56,7 +56,7 @@ export const isLoopbackHost = (hostname: string) =>
 
 const DIAGNOSE_TIMEOUT = 5000
 
-export const diagnoseConnection = async (
+const diagnoseConnection = async (
   url: string,
   signal?: AbortSignal,
 ): Promise<ConnectionDiagnosis> => {

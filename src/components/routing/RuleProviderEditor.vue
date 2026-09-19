@@ -170,13 +170,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import SegmentedControl, { type SegmentOption } from '@/components/common/SegmentedControl.vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
 import TextInput from '@/components/common/TextInput.vue'
+import { useDualInputMode } from '@/composables/dualInputMode'
 import { showNotification } from '@/helper/notification'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { parse as parseYaml } from 'yaml'
 import {
   RULE_PROVIDER_BEHAVIORS,
   RULE_PROVIDER_FORMATS,
@@ -197,8 +197,6 @@ const emits = defineEmits<{
   (e: 'save', payload: RuleProviderDraft, originalName?: string): void
 }>()
 
-const { t } = useI18n()
-
 const isEditing = computed(() => !!props.initial?.name)
 
 const createForm = (initial?: RuleProviderDraft) => ({
@@ -215,20 +213,13 @@ const createForm = (initial?: RuleProviderDraft) => ({
 })
 
 const form = ref(createForm(props.initial))
-const inputMode = ref<'form' | 'yaml'>('form')
-const providerYaml = ref('')
-const inputModeOptions = computed<SegmentOption[]>(() => [
-  { value: 'form', label: t('formMode') },
-  { value: 'yaml', label: t('dualModeYaml') },
-])
 
 watch(
   () => props.modelValue,
   (value) => {
     if (value) {
       form.value = createForm(props.initial)
-      inputMode.value = 'form'
-      providerYaml.value = ''
+      resetInputMode()
     }
   },
 )
@@ -294,27 +285,24 @@ const applyYaml = (yamlText: string): boolean => {
   }
 }
 
-const switchInputMode = (mode: 'form' | 'yaml') => {
-  if (mode === 'yaml') {
-    providerYaml.value = stringifyYaml(buildDraft(), { indent: 2 })
-  } else if (!applyYaml(providerYaml.value)) {
-    showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-    return
-  }
-  inputMode.value = mode
-}
+const {
+  inputMode,
+  inputModeOptions,
+  switchInputMode,
+  resetInputMode,
+  commitYaml,
+  yamlText: providerYaml,
+} = useDualInputMode({
+  buildYaml: () => buildDraft(),
+  applyYaml: (yamlText) => applyYaml(yamlText),
+})
 
 const handleModelValueUpdate = (value: boolean | undefined) => {
   if (value !== undefined) emits('update:modelValue', value)
 }
 
 const saveProvider = () => {
-  if (inputMode.value === 'yaml') {
-    if (!applyYaml(providerYaml.value)) {
-      showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-      return
-    }
-  }
+  if (inputMode.value === 'yaml' && !commitYaml()) return
   if (!canSave.value) return
   const draft = buildDraft()
   if (draft.name !== props.initial?.name && props.existingNames.includes(draft.name)) {

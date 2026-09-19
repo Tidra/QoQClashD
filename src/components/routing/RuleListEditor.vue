@@ -194,10 +194,11 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import SegmentedControl, { type SegmentOption } from '@/components/common/SegmentedControl.vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
+import { useDualInputMode } from '@/composables/dualInputMode'
 import { showNotification } from '@/helper/notification'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { parse as parseYaml } from 'yaml'
 import {
   ALL_RULE_TYPES,
   RULE_TARGET_ACTIONS,
@@ -249,12 +250,6 @@ const generateId = () => `rule-row-${Math.random().toString(36).slice(2, 10)}`
 
 const name = ref('')
 const rows = ref<RuleListRow[]>([])
-const inputMode = ref<'form' | 'yaml'>('form')
-const listYaml = ref('')
-const inputModeOptions = computed<SegmentOption[]>(() => [
-  { value: 'form', label: t('formMode') },
-  { value: 'yaml', label: t('dualModeYaml') },
-])
 
 const typeOptions = RULE_TYPE_GROUPS.flatMap((item) =>
   item.types.map((type) => ({ value: type, label: type, group: item.group })),
@@ -306,8 +301,7 @@ const moveRow = (index: number, offset: -1 | 1) => {
 const resetForm = () => {
   name.value = props.initialName ?? ''
   rows.value = props.initialRows.map((row) => ({ ...row }))
-  inputMode.value = 'form'
-  listYaml.value = ''
+  resetInputMode()
 }
 
 watch(
@@ -372,21 +366,24 @@ const applyYaml = (yamlText: string): boolean => {
   }
 }
 
-const switchInputMode = (mode: 'form' | 'yaml') => {
-  if (mode === 'yaml') {
-    listYaml.value = stringifyYaml(buildYamlObject(), { indent: 2 })
-  } else if (!applyYaml(listYaml.value)) {
-    showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-    return
-  }
-  inputMode.value = mode
-}
+const {
+  inputMode,
+  inputModeOptions,
+  switchInputMode,
+  resetInputMode,
+  commitYaml,
+  yamlHasContent,
+  yamlText: listYaml,
+} = useDualInputMode({
+  buildYaml: () => buildYamlObject(),
+  applyYaml: (yamlText) => applyYaml(yamlText),
+})
 
 const isRowValid = (row: RuleListRow) =>
   !!row.type && !!row.target.trim() && (row.type === 'MATCH' || !!row.payload.trim())
 
 const canSave = computed(() => {
-  if (inputMode.value === 'yaml') return !!listYaml.value.trim()
+  if (inputMode.value === 'yaml') return yamlHasContent.value
   if (!rows.value.length || !rows.value.every(isRowValid)) return false
   if (props.mode === 'sub' && !name.value.trim()) return false
   return true
@@ -399,10 +396,7 @@ const handleModelValueUpdate = (value: boolean | undefined) => {
 const saveList = () => {
   let finalRows = rows.value
   if (inputMode.value === 'yaml') {
-    if (!applyYaml(listYaml.value)) {
-      showNotification({ content: 'routingInvalidYaml', type: 'alert-error' })
-      return
-    }
+    if (!commitYaml()) return
     finalRows = rows.value
   }
   if (!finalRows.length || !finalRows.every(isRowValid)) return
