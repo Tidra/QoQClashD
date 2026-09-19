@@ -14,20 +14,31 @@
       />
     </template>
 
-    <div v-if="inputMode === 'yaml'" class="flex min-h-[420px] flex-col">
+    <div
+      v-if="inputMode === 'yaml'"
+      class="flex min-h-[420px] flex-col"
+    >
       <textarea
         v-model="groupYaml"
-        class="textarea textarea-bordered h-[420px] w-full resize-none border-base-300 bg-base-100 font-mono text-xs"
+        class="textarea textarea-bordered border-base-300 bg-base-100 h-[420px] w-full resize-none font-mono text-xs"
         spellcheck="false"
       ></textarea>
     </div>
-    <div v-else class="settings-grid node-form-grid">
+    <div
+      v-else
+      class="settings-grid node-form-grid"
+    >
       <div class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorGroup') }}</div>
-        <input v-model="groupForm.name" type="text" class="input input-sm w-40" :placeholder="$t('proxyGroupEditorNamePlaceholder')" />
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorGroup') }}</div>
+        <input
+          v-model="groupForm.name"
+          type="text"
+          class="input input-sm w-40"
+          :placeholder="$t('proxyGroupEditorNamePlaceholder')"
+        />
       </div>
       <div class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorGroupType') }}</div>
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorGroupType') }}</div>
         <SelectInput
           v-model="groupForm.type"
           class="select select-sm min-w-24"
@@ -37,25 +48,56 @@
 
       <template v-if="showUrlField">
         <div class="setting-item node-span-2">
-          <div class="setting-item-label">{{ $t('proxyGroupEditorUrl') }}</div>
-          <input v-model="groupForm.url" type="text" class="input input-sm w-full max-w-64" :placeholder="$t('proxyGroupEditorUrlPlaceholder')" />
+          <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorUrl') }}</div>
+          <!-- 留空 = 使用设置页「代理的延迟地址」，尾部 X 一键清回默认 -->
+          <TextInput
+            v-model="groupForm.url"
+            :placeholder="urlDefault"
+            clearable
+            class="node-long-input"
+          />
         </div>
         <div class="setting-item">
-          <div class="setting-item-label">{{ $t('proxyGroupEditorInterval') }} (s)</div>
-          <input v-model.number="groupForm.interval" type="number" min="1" class="input input-sm w-24" />
+          <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorInterval') }} (s)</div>
+          <input
+            v-model.number="groupForm.interval"
+            type="number"
+            min="1"
+            class="input input-sm w-24"
+            :placeholder="String(GROUP_DEFAULTS.interval)"
+          />
         </div>
         <div class="setting-item">
-          <div class="setting-item-label">{{ $t('proxyGroupEditorTimeout') }} (ms)</div>
-          <input v-model.number="groupForm.timeout" type="number" min="1" class="input input-sm w-24" />
+          <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorTimeout') }} (ms)</div>
+          <input
+            v-model.number="groupForm.timeout"
+            type="number"
+            min="1"
+            class="input input-sm w-24"
+            :placeholder="String(GROUP_DEFAULTS.timeout)"
+          />
         </div>
       </template>
 
-      <div v-if="groupForm.type === 'url-test'" class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorTolerance') }} (ms)</div>
-        <input v-model.number="groupForm.tolerance" type="number" min="0" class="input input-sm w-24" />
+      <!-- url-test 的短控件数是奇数(间隔/超时之外只有容差),单独占整行避免出现空格 -->
+      <div
+        v-if="groupForm.type === 'url-test'"
+        class="setting-item node-span-2"
+      >
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorTolerance') }} (ms)</div>
+        <input
+          v-model.number="groupForm.tolerance"
+          type="number"
+          min="0"
+          class="input input-sm w-24"
+          placeholder="50"
+        />
       </div>
-      <div v-if="groupForm.type === 'load-balance'" class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorStrategy') }}</div>
+      <div
+        v-if="groupForm.type === 'load-balance'"
+        class="setting-item"
+      >
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorStrategy') }}</div>
         <SelectInput
           v-model="groupForm.strategy"
           class="select select-sm min-w-24"
@@ -67,12 +109,23 @@
           ]"
         />
       </div>
-      <div v-if="groupForm.type === 'load-balance'" class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorMinCount') }}</div>
-        <input v-model.number="groupForm.minCount" type="number" min="0" class="input input-sm w-24" />
+      <div
+        v-if="groupForm.type === 'load-balance'"
+        class="setting-item"
+      >
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorMinCount') }}</div>
+        <input
+          v-model.number="groupForm.minCount"
+          type="number"
+          min="0"
+          class="input input-sm w-24"
+        />
       </div>
-      <div v-if="groupForm.type === 'select'" class="setting-item node-span-2">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorDefaultSelected') }}</div>
+      <div
+        v-if="groupForm.type === 'select'"
+        class="setting-item node-span-2"
+      >
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorDefaultSelected') }}</div>
         <SelectInput
           v-model="groupForm.defaultSelected"
           :options="defaultSelectedOptions"
@@ -80,17 +133,27 @@
           searchable
           :search-placeholder="$t('proxyGroupEditorSearchOption')"
           :no-results-text="$t('proxyGroupEditorNoMatch')"
-          class="select select-sm min-w-0 max-w-64 flex-1"
+          class="select select-sm max-w-64 min-w-0 flex-1"
         />
       </div>
 
-      <div class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorFilter') }}</div>
-        <input v-model="groupForm.filter" type="text" class="input input-sm w-40" placeholder="(?i)港|hk" />
+      <div class="setting-item node-span-2">
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorFilter') }}</div>
+        <input
+          v-model="groupForm.filter"
+          type="text"
+          class="input input-sm node-long-input"
+          :placeholder="$t('proxyGroupEditorFilterPlaceholder')"
+        />
       </div>
-      <div class="setting-item">
-        <div class="setting-item-label">{{ $t('proxyGroupEditorExcludeFilter') }}</div>
-        <input v-model="groupForm.excludeFilter" type="text" class="input input-sm w-40" placeholder="美|日" />
+      <div class="setting-item node-span-2">
+        <div class="setting-item-label shrink-0!">{{ $t('proxyGroupEditorExcludeFilter') }}</div>
+        <input
+          v-model="groupForm.excludeFilter"
+          type="text"
+          class="input input-sm node-long-input"
+          :placeholder="$t('proxyGroupEditorExcludeFilterPlaceholder')"
+        />
       </div>
 
       <div class="setting-item node-span-2 !flex-col !items-stretch !gap-2">
@@ -100,10 +163,15 @@
             v-model="memberFilter"
             :placeholder="$t('proxyGroupEditorMemberFilter')"
             clearable
-            class="min-w-0 max-w-52 flex-1"
+            class="max-w-52 min-w-0 flex-1"
           />
           <span class="text-base-content/50 shrink-0 text-xs">
-            {{ $t('proxyGroupEditorMembersSelected', { selected: expandedMemberNames.length, total: selectableMembers.length }) }}
+            {{
+              $t('proxyGroupEditorMembersSelected', {
+                selected: expandedMemberNames.length,
+                total: selectableMembers.length,
+              })
+            }}
           </span>
           <button
             type="button"
@@ -111,42 +179,61 @@
             :disabled="!toggleableFilteredMembers.length"
             @click="toggleSelectAllFiltered"
           >
-            {{ allFilteredSelected ? $t('proxyGroupEditorDeselectAll') : $t('proxyGroupEditorSelectAll') }}
+            {{
+              allFilteredSelected
+                ? $t('proxyGroupEditorDeselectAll')
+                : $t('proxyGroupEditorSelectAll')
+            }}
           </button>
         </div>
         <div class="border-base-300 bg-base-100 max-h-48 overflow-y-auto rounded-md border">
-            <label
-              v-for="row in memberCandidates"
-              :key="row.name"
-              class="hover:bg-base-200/60 flex min-h-8 items-center gap-2 px-2 py-1 text-sm"
-              :class="row.managed ? 'opacity-70' : 'cursor-pointer'"
+          <label
+            v-for="row in memberCandidates"
+            :key="row.name"
+            class="hover:bg-base-200/60 flex min-h-8 items-center gap-2 px-2 py-1 text-sm"
+            :class="row.managed ? 'opacity-70' : 'cursor-pointer'"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs shrink-0"
+              :checked="row.checked"
+              :disabled="row.managed"
+              @change="toggleMember(row.name, ($event.target as HTMLInputElement).checked)"
+            />
+            <span
+              class="badge badge-xs shrink-0"
+              :class="row.kind === 'group' ? 'badge-warning' : 'badge-info'"
             >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs shrink-0"
-                :checked="row.checked"
-                :disabled="row.managed"
-                @change="toggleMember(row.name, ($event.target as HTMLInputElement).checked)"
-              />
-              <span
-                class="badge badge-xs shrink-0"
-                :class="row.kind === 'group' ? 'badge-warning' : 'badge-info'"
-              >
-                {{ row.kind === 'group' ? $t('memberKindGroup') : $t('memberKindNode') }}
-              </span>
-              <span class="min-w-0 flex-1 truncate" :title="row.name">{{ row.name }}</span>
-              <span v-if="row.managed" class="badge badge-ghost badge-xs shrink-0">{{ $t('proxyGroupEditorFilterManaged') }}</span>
-            </label>
-            <div v-if="!memberCandidates.length" class="text-base-content/60 py-3 text-center text-sm">
-              {{ $t('proxyGroupEditorNoMatch') }}
-            </div>
+              {{ row.kind === 'group' ? $t('memberKindGroup') : $t('memberKindNode') }}
+            </span>
+            <span
+              class="min-w-0 flex-1 truncate"
+              :title="row.name"
+              >{{ row.name }}</span
+            >
+            <span
+              v-if="row.managed"
+              class="badge badge-ghost badge-xs shrink-0"
+              >{{ $t('proxyGroupEditorFilterManaged') }}</span
+            >
+          </label>
+          <div
+            v-if="!memberCandidates.length"
+            class="text-base-content/60 py-3 text-center text-sm"
+          >
+            {{ $t('proxyGroupEditorNoMatch') }}
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 操作行 -->
-    <div class="flex items-center justify-end gap-2 border-t border-base-300/60 p-4 pt-3">
-      <button type="button" class="btn btn-sm btn-ghost" @click="$emit('update:modelValue', false)">
+    <div class="border-base-300/60 flex items-center justify-end gap-2 border-t p-4 pt-3">
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost"
+        @click="$emit('update:modelValue', false)"
+      >
         {{ $t('cancel') }}
       </button>
       <button
@@ -169,10 +256,14 @@ import SegmentedControl, { type SegmentOption } from '@/components/common/Segmen
 import SelectInput from '@/components/common/SelectInput.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import type { ProxyGroupDraft, ProxyGroupMemberOption } from '@/types'
-import { PROXY_TYPE } from '@/constant'
+import { PROXY_TYPE, TEST_URL } from '@/constant'
+import { speedtestUrl } from '@/store/settings'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { showNotification } from '@/helper/notification'
 import { matchesFilterPattern } from '@/store/proxyGroups'
+
+// 表单留空时回落的默认值；灰字 placeholder 展示的就是它们。
+const GROUP_DEFAULTS = { interval: 3600, timeout: 5000 }
 
 const normalizeGroupType = (type?: string) => {
   const value = (type ?? PROXY_TYPE.Selector).toLowerCase()
@@ -192,22 +283,27 @@ const props = defineProps<{
 
 const emits = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (
-    e: 'save',
-    payload: ProxyGroupDraft,
-  ): void
+  (e: 'save', payload: ProxyGroupDraft): void
 }>()
 
 const { t } = useI18n()
 
 const isEditing = computed(() => !!props.initial?.name)
 
+// 测速地址默认 = 设置页「代理的延迟地址」（未配置时回落内置 TEST_URL）
+const urlDefault = computed(() => speedtestUrl.value.trim() || TEST_URL)
+
+// v-model.number 在空输入框上给的是 ''，统一收成 undefined
+const toNum = (v: number | '' | undefined) =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined
+
 const createGroupForm = (initial?: ProxyGroupDraft & { 'min-count'?: number }) => ({
   name: initial?.name ?? '',
   type: normalizeGroupType(initial?.type),
-  url: initial?.url ?? 'https://www.gstatic.com/generate_204',
-  interval: initial?.interval ?? 3600,
-  timeout: initial?.timeout ?? 5000,
+  // 与默认值相同的存量值直接清空，让灰字 placeholder 顶上
+  url: initial?.url && initial.url !== urlDefault.value ? initial.url : '',
+  interval: initial?.interval === GROUP_DEFAULTS.interval ? undefined : initial?.interval,
+  timeout: initial?.timeout === GROUP_DEFAULTS.timeout ? undefined : initial?.timeout,
   tolerance: initial?.tolerance,
   strategy: initial?.strategy ?? '',
   minCount: initial?.minCount ?? initial?.['min-count'],
@@ -245,21 +341,28 @@ watch(
 
 const buildGroupDraft = (): ProxyGroupDraft => {
   const type = normalizeGroupType(groupForm.value.type)
-  const isHealthCheckGroup =
-    type === 'url-test' || type === 'fallback' || type === 'load-balance'
+  const isHealthCheckGroup = type === 'url-test' || type === 'fallback' || type === 'load-balance'
   return {
     name: groupForm.value.name.trim(),
     type,
     proxies: members.value,
-    url: isHealthCheckGroup ? groupForm.value.url || undefined : undefined,
-    interval: isHealthCheckGroup ? groupForm.value.interval : undefined,
-    timeout: isHealthCheckGroup ? groupForm.value.timeout : undefined,
-    tolerance: type === 'url-test' && groupForm.value.tolerance != null ? groupForm.value.tolerance : undefined,
-    strategy: type === 'load-balance' && groupForm.value.strategy ? groupForm.value.strategy : undefined,
-    minCount: type === 'load-balance' && groupForm.value.minCount != null ? groupForm.value.minCount : undefined,
+    url: isHealthCheckGroup ? groupForm.value.url.trim() || urlDefault.value : undefined,
+    interval: isHealthCheckGroup
+      ? (toNum(groupForm.value.interval) ?? GROUP_DEFAULTS.interval)
+      : undefined,
+    timeout: isHealthCheckGroup
+      ? (toNum(groupForm.value.timeout) ?? GROUP_DEFAULTS.timeout)
+      : undefined,
+    tolerance: type === 'url-test' ? toNum(groupForm.value.tolerance) : undefined,
+    strategy:
+      type === 'load-balance' && groupForm.value.strategy ? groupForm.value.strategy : undefined,
+    minCount: type === 'load-balance' ? toNum(groupForm.value.minCount) : undefined,
     filter: groupForm.value.filter?.trim() || undefined,
     'exclude-filter': groupForm.value.excludeFilter?.trim() || undefined,
-    'default-selected': type === 'select' && groupForm.value.defaultSelected?.trim() ? groupForm.value.defaultSelected.trim() : undefined,
+    'default-selected':
+      type === 'select' && groupForm.value.defaultSelected?.trim()
+        ? groupForm.value.defaultSelected.trim()
+        : undefined,
     // 表单不再编辑这些字段，原值透传避免编辑保存时被清空
     icon: props.initial?.icon,
     hidden: props.initial?.hidden,
@@ -291,8 +394,7 @@ const buildGroupYamlObject = () => {
 const switchInputMode = (mode: 'form' | 'yaml') => {
   if (mode === 'yaml') {
     groupYaml.value = stringifyYaml(buildGroupYamlObject(), { indent: 2 })
-  }
-  else {
+  } else {
     try {
       const parsed = parseYaml(groupYaml.value) as ProxyGroupDraft
       groupForm.value = createGroupForm(parsed)
@@ -343,7 +445,10 @@ const filterManagedMembers = computed(() => {
     props.memberOptions
       .filter((option) => option.kind === 'node')
       .map((option) => option.name)
-      .filter((name) => matchesFilterPattern(filter, name) && !(exclude && matchesFilterPattern(exclude, name))),
+      .filter(
+        (name) =>
+          matchesFilterPattern(filter, name) && !(exclude && matchesFilterPattern(exclude, name)),
+      ),
   )
 })
 
@@ -414,7 +519,13 @@ const saveGroup = () => {
   if (inputMode.value === 'yaml') {
     try {
       const parsed = parseYaml(groupYaml.value) as ProxyGroupDraft
-      if (!parsed || typeof parsed !== 'object' || !parsed.name || !parsed.type || !Array.isArray(parsed.proxies)) {
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !parsed.name ||
+        !parsed.type ||
+        !Array.isArray(parsed.proxies)
+      ) {
         throw new Error('Invalid proxy group YAML')
       }
       emits('save', parsed)
@@ -430,9 +541,3 @@ const saveGroup = () => {
   emits('update:modelValue', false)
 }
 </script>
-
-<style scoped>
-.ghost {
-  opacity: 0.4;
-}
-</style>

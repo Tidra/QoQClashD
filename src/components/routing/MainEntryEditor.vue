@@ -89,7 +89,7 @@
           <input
             v-model="form.allowLan"
             type="checkbox"
-            class="toggle toggle-sm"
+            class="toggle"
           />
         </div>
       </div>
@@ -100,7 +100,7 @@
           <input
             v-model="form.tunEnable"
             type="checkbox"
-            class="toggle toggle-sm"
+            class="toggle"
             :title="$t('tunMode')"
           />
         </div>
@@ -127,11 +127,13 @@
           </div>
           <div class="setting-item">
             <div class="setting-item-label shrink-0!">{{ $t('tunMtu') }}</div>
+            <!-- 留空 = 内核默认 9000 -->
             <input
               v-model.number="form.tunMtu"
               type="number"
               min="576"
               class="input input-sm w-24"
+              :placeholder="String(TUN_DEFAULTS.mtu)"
             />
           </div>
           <div class="setting-item">
@@ -139,7 +141,7 @@
             <input
               v-model="form.tunAutoRoute"
               type="checkbox"
-              class="toggle toggle-sm"
+              class="toggle"
             />
           </div>
           <div class="setting-item">
@@ -147,7 +149,7 @@
             <input
               v-model="form.tunAutoDetectInterface"
               type="checkbox"
-              class="toggle toggle-sm"
+              class="toggle"
             />
           </div>
           <div class="setting-item">
@@ -155,16 +157,17 @@
             <input
               v-model="form.tunStrictRoute"
               type="checkbox"
-              class="toggle toggle-sm"
+              class="toggle"
             />
           </div>
           <div class="setting-item node-span-2">
             <div class="setting-item-label shrink-0!">{{ $t('tunDnsHijack') }}</div>
+            <!-- 留空 = 内核默认 any:53 -->
             <input
               v-model="form.tunDnsHijackStr"
               type="text"
-              class="input input-sm w-full max-w-64"
-              placeholder="any:53,tcp://any:53"
+              class="input input-sm node-long-input"
+              :placeholder="TUN_DEFAULTS.dnsHijack"
             />
           </div>
         </div>
@@ -215,22 +218,28 @@ const emits = defineEmits<{
 
 const { t } = useI18n()
 
-const createForm = (initial: MainEntryDraft) => ({
-  port: initial.port,
-  socksPort: initial['socks-port'],
-  mixedPort: initial['mixed-port'],
-  redirPort: initial['redir-port'],
-  tproxyPort: initial['tproxy-port'],
-  allowLan: initial['allow-lan'] ?? false,
-  tunEnable: initial.tun?.enable ?? false,
-  tunStack: initial.tun?.stack ?? 'gvisor',
-  tunDevice: initial.tun?.device ?? '',
-  tunMtu: initial.tun?.mtu ?? 9000,
-  tunAutoRoute: initial.tun?.['auto-route'] ?? true,
-  tunAutoDetectInterface: initial.tun?.['auto-detect-interface'] ?? true,
-  tunStrictRoute: initial.tun?.['strict-route'] ?? false,
-  tunDnsHijackStr: (initial.tun?.['dns-hijack'] ?? ['any:53']).join(','),
-})
+// 留空即使用内核默认值：灰字占位展示，构建 YAML 时省略该键
+const TUN_DEFAULTS = { mtu: 9000, dnsHijack: 'any:53' }
+
+const createForm = (initial: MainEntryDraft) => {
+  const hijack = (initial.tun?.['dns-hijack'] ?? []).join(',')
+  return {
+    port: initial.port,
+    socksPort: initial['socks-port'],
+    mixedPort: initial['mixed-port'],
+    redirPort: initial['redir-port'],
+    tproxyPort: initial['tproxy-port'],
+    allowLan: initial['allow-lan'] ?? false,
+    tunEnable: initial.tun?.enable ?? false,
+    tunStack: initial.tun?.stack ?? 'gvisor',
+    tunDevice: initial.tun?.device ?? '',
+    tunMtu: initial.tun?.mtu === TUN_DEFAULTS.mtu ? undefined : initial.tun?.mtu,
+    tunAutoRoute: initial.tun?.['auto-route'] ?? true,
+    tunAutoDetectInterface: initial.tun?.['auto-detect-interface'] ?? true,
+    tunStrictRoute: initial.tun?.['strict-route'] ?? false,
+    tunDnsHijackStr: hijack === TUN_DEFAULTS.dnsHijack ? '' : hijack,
+  }
+}
 
 const form = ref(createForm(props.initial))
 const inputMode = ref<'form' | 'yaml'>('form')
@@ -267,6 +276,10 @@ const toPort = (value: unknown) => (typeof value === 'number' && value > 0 ? val
 
 const buildDraft = (): MainEntryDraft => {
   const f = form.value
+  const dnsHijack = f.tunDnsHijackStr
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
   return {
     ...(f.port ? { port: f.port } : {}),
     ...(f.socksPort ? { 'socks-port': f.socksPort } : {}),
@@ -282,10 +295,7 @@ const buildDraft = (): MainEntryDraft => {
       'auto-route': f.tunAutoRoute,
       'auto-detect-interface': f.tunAutoDetectInterface,
       'strict-route': f.tunStrictRoute,
-      'dns-hijack': f.tunDnsHijackStr
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
+      ...(dnsHijack.length ? { 'dns-hijack': dnsHijack } : {}),
     },
   }
 }

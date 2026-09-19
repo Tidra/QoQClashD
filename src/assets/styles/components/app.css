@@ -92,6 +92,10 @@
     grid-column: auto;
   }
 }
+/* 跨整行的长文本控件:各编辑弹窗统一固定宽度并靠右,不随弹窗宽度顶满整行 */
+.node-long-input {
+  @apply w-96 max-w-full;
+}
 .setting-item {
   @apply border-base-border flex min-h-12 items-center gap-3 border-b px-4 py-2 outline-none;
   &:last-child {

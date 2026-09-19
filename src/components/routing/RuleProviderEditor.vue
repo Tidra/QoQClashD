@@ -29,13 +29,39 @@
       class="flex flex-col gap-3"
     >
       <div class="settings-grid node-form-grid">
-        <div class="setting-item">
+        <!-- 长文本字段集中前置;短控件排在尾部成对,落单项只可能出现在表单末尾 -->
+        <div class="setting-item node-span-2">
           <div class="setting-item-label shrink-0!">{{ $t('ruleProviderName') }}</div>
           <input
             v-model="form.name"
             type="text"
-            class="input input-sm w-full max-w-56"
+            class="input input-sm node-long-input"
             placeholder="google"
+          />
+        </div>
+        <div
+          v-if="form.type === 'http'"
+          class="setting-item node-span-2"
+        >
+          <div class="setting-item-label shrink-0!">{{ $t('ruleProviderUrl') }}</div>
+          <!-- 连接地址框：尾部 X 一键清空 -->
+          <TextInput
+            v-model="form.url"
+            clearable
+            placeholder="https://.../rules.yaml"
+            class="node-long-input"
+          />
+        </div>
+        <div
+          v-if="form.type !== 'inline'"
+          class="setting-item node-span-2"
+        >
+          <div class="setting-item-label shrink-0!">{{ $t('ruleProviderPath') }}</div>
+          <input
+            v-model="form.path"
+            type="text"
+            class="input input-sm node-long-input"
+            placeholder="./ruleset/xxx.yaml"
           />
         </div>
         <div class="setting-item">
@@ -63,30 +89,6 @@
             v-model="form.behavior"
             class="select select-sm min-w-24"
             :options="RULE_PROVIDER_BEHAVIORS.map((value) => ({ value, label: value }))"
-          />
-        </div>
-        <div
-          v-if="form.type === 'http'"
-          class="setting-item node-span-2"
-        >
-          <div class="setting-item-label shrink-0!">{{ $t('ruleProviderUrl') }}</div>
-          <input
-            v-model="form.url"
-            type="text"
-            class="input input-sm w-full"
-            placeholder="https://.../rules.yaml"
-          />
-        </div>
-        <div
-          v-if="form.type !== 'inline'"
-          class="setting-item"
-        >
-          <div class="setting-item-label shrink-0!">{{ $t('ruleProviderPath') }}</div>
-          <input
-            v-model="form.path"
-            type="text"
-            class="input input-sm w-full max-w-56"
-            placeholder="./ruleset/xxx.yaml"
           />
         </div>
         <div
@@ -122,7 +124,7 @@
           <div class="setting-item-label shrink-0!">{{ $t('ruleProviderProxy') }}</div>
           <SelectInput
             v-model="form.proxy"
-            class="select select-sm max-w-56 min-w-0"
+            class="select select-sm max-w-40 min-w-0 flex-1"
             :options="proxyOptions"
             searchable
             :search-placeholder="$t('search')"
@@ -138,7 +140,7 @@
         <div class="text-sm font-medium">{{ $t('ruleProviderPayload') }}</div>
         <textarea
           v-model="form.payloadText"
-          class="textarea textarea-bordered h-32 w-full resize-none font-mono text-xs"
+          class="textarea textarea-bordered border-base-300 bg-base-100 h-32 w-full resize-none font-mono text-xs"
           placeholder="DOMAIN-SUFFIX,google.com"
           spellcheck="false"
         ></textarea>
@@ -172,6 +174,7 @@ import { useI18n } from 'vue-i18n'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SegmentedControl, { type SegmentOption } from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
+import TextInput from '@/components/common/TextInput.vue'
 import { showNotification } from '@/helper/notification'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import {

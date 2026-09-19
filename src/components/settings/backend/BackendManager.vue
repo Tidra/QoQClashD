@@ -15,7 +15,7 @@
     v-if="isReady"
     v-model="isOpen"
     :title="title"
-    box-class="max-w-md"
+    box-class="max-w-xl"
     @enter="handleEnter"
   >
     <!-- 列表态 -->

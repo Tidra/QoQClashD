@@ -26,24 +26,25 @@
     </div>
     <div
       v-else
-      class="flex max-h-[60vh] min-h-[200px] flex-col gap-3 overflow-auto"
+      class="flex min-h-[200px] flex-col gap-3"
     >
       <div
         v-if="mode === 'sub'"
         class="settings-grid node-form-grid"
       >
-        <div class="setting-item">
+        <div class="setting-item node-span-2">
           <div class="setting-item-label shrink-0!">{{ $t('subRuleNameLabel') }}</div>
           <input
             v-model="name"
             type="text"
-            class="input input-sm w-full max-w-56"
-            :placeholder="$t('subRuleNameLabel')"
+            class="input input-sm w-full"
+            :placeholder="$t('subRuleNamePlaceholder')"
           />
         </div>
       </div>
 
-      <div class="flex flex-col gap-2">
+      <!-- px-4 对齐上方名称行（setting-item 自带同宽内边距），左右边缘一致 -->
+      <div class="flex flex-col gap-2 px-4">
         <div class="flex items-center justify-between">
           <div class="text-sm font-medium">{{ $t('subRuleRulesLabel') }}</div>
           <button

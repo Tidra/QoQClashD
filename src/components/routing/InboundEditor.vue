@@ -29,12 +29,12 @@
       class="flex flex-col gap-3"
     >
       <div class="settings-grid node-form-grid">
-        <div class="setting-item">
+        <div class="setting-item node-span-2">
           <div class="setting-item-label shrink-0!">{{ $t('name') }}</div>
           <input
             v-model="form.name"
             type="text"
-            class="input input-sm w-full max-w-56"
+            class="input input-sm node-long-input"
             :placeholder="$t('inboundNamePlaceholder')"
           />
         </div>
@@ -48,21 +48,24 @@
         </div>
         <div class="setting-item">
           <div class="setting-item-label shrink-0!">{{ $t('port') }}</div>
+          <!-- 留空 = 默认 7890，保存/生成 YAML 时回落 -->
           <input
             v-model.number="form.port"
             type="number"
             min="1"
             max="65535"
             class="input input-sm w-24"
+            :placeholder="String(INBOUND_DEFAULTS.port)"
           />
         </div>
         <div class="setting-item">
           <div class="setting-item-label shrink-0!">{{ $t('inboundListen') }}</div>
+          <!-- 留空 = 使用内核默认监听地址 -->
           <input
             v-model="form.listen"
             type="text"
             class="input input-sm w-32"
-            placeholder="0.0.0.0"
+            :placeholder="INBOUND_DEFAULTS.listen"
           />
         </div>
         <div class="setting-item">
@@ -70,14 +73,14 @@
           <input
             v-model="form.udp"
             type="checkbox"
-            class="toggle toggle-sm"
+            class="toggle"
           />
         </div>
         <div class="setting-item">
           <div class="setting-item-label shrink-0!">{{ $t('inboundSubRule') }}</div>
           <SelectInput
             v-model="form.rule"
-            class="select select-sm max-w-56 min-w-0"
+            class="select select-sm w-36"
             :options="ruleOptions"
           />
         </div>
@@ -85,7 +88,7 @@
           <div class="setting-item-label shrink-0!">{{ $t('inboundFixedProxy') }}</div>
           <SelectInput
             v-model="form.proxy"
-            class="select select-sm max-w-56 min-w-0"
+            class="select select-sm w-36"
             :options="proxyOptions"
             searchable
             :search-placeholder="$t('searchProxyGroup')"
@@ -116,7 +119,7 @@
       <button
         type="button"
         class="btn btn-sm btn-primary"
-        :disabled="inputMode === 'yaml' ? !inboundYaml.trim() : !form.name.trim() || !form.port"
+        :disabled="inputMode === 'yaml' ? !inboundYaml.trim() : !form.name.trim()"
         @click="saveInbound"
       >
         {{ $t('save') }}
@@ -153,11 +156,14 @@ const { t } = useI18n()
 
 const isEditing = computed(() => !!props.initial)
 
+// 留空即使用默认值：表单以灰字占位展示，保存/生成 YAML 时回落
+const INBOUND_DEFAULTS = { port: 7890, listen: '0.0.0.0' }
+
 const createForm = (initial?: InboundDraft) => ({
   name: initial?.name ?? '',
   type: initial?.type ?? 'mixed',
-  port: initial?.port ?? 7890,
-  listen: initial?.listen ?? '0.0.0.0',
+  port: initial?.port === INBOUND_DEFAULTS.port ? undefined : initial?.port,
+  listen: initial?.listen === INBOUND_DEFAULTS.listen ? '' : (initial?.listen ?? ''),
   udp: initial?.udp ?? true,
   rule: initial?.rule ?? '',
   proxy: initial?.proxy ?? '',
@@ -212,13 +218,13 @@ const buildDraft = (): InboundDraft => {
     id: props.initial?.id ?? '',
     name: f.name.trim(),
     type: f.type,
-    port: f.port,
-    ...(f.listen.trim() ? { listen: f.listen.trim() } : {}),
+    port: f.port || INBOUND_DEFAULTS.port,
+    listen: f.listen.trim() || INBOUND_DEFAULTS.listen,
     ...(f.udp ? { udp: true } : {}),
     ...(f.rule ? { rule: f.rule } : {}),
     ...(f.proxy ? { proxy: f.proxy } : {}),
     ...(f.routingMark ? { 'routing-mark': f.routingMark } : {}),
-  }
+  } as InboundDraft
 }
 
 const buildYamlObject = () => {

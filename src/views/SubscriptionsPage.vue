@@ -165,25 +165,26 @@
     >
       <div class="settings-grid node-form-grid">
         <div class="setting-item node-span-2">
-          <div class="setting-item-label">{{ $t('subscriptionName') }}</div>
+          <div class="setting-item-label shrink-0!">{{ $t('subscriptionName') }}</div>
           <input
             v-model="form.name"
             type="text"
-            class="input input-sm w-full max-w-64"
-            placeholder="My subscription"
+            class="input input-sm node-long-input"
+            :placeholder="$t('subscriptionNamePlaceholder')"
           />
         </div>
         <div class="setting-item node-span-2">
-          <div class="setting-item-label">{{ $t('subscriptionUrl') }}</div>
-          <input
+          <div class="setting-item-label shrink-0!">{{ $t('subscriptionUrl') }}</div>
+          <!-- 连接地址框：尾部 X 一键清空 -->
+          <TextInput
             v-model="form.url"
-            type="url"
-            class="input input-sm w-full max-w-64"
+            clearable
             placeholder="https://example.com/sub.yaml"
+            class="node-long-input"
           />
         </div>
         <div class="setting-item">
-          <div class="setting-item-label">{{ $t('subscriptionEnabled') }}</div>
+          <div class="setting-item-label shrink-0!">{{ $t('subscriptionEnabled') }}</div>
           <input
             v-model="form.enabled"
             type="checkbox"
@@ -191,7 +192,7 @@
           />
         </div>
         <div class="setting-item">
-          <div class="setting-item-label">{{ $t('subscriptionAutoUpdate') }}</div>
+          <div class="setting-item-label shrink-0!">{{ $t('subscriptionAutoUpdate') }}</div>
           <input
             v-model="form.autoUpdate"
             type="checkbox"
@@ -200,15 +201,19 @@
         </div>
         <div
           v-if="form.autoUpdate"
-          class="setting-item node-span-2"
+          class="setting-item"
         >
-          <div class="setting-item-label">{{ $t('subscriptionUpdateInterval') }} (min)</div>
+          <div class="setting-item-label shrink-0!">
+            {{ $t('subscriptionUpdateInterval') }} (min)
+          </div>
+          <!-- 留空 = 默认 1440 分钟，灰字占位，保存时回落 -->
           <input
             v-model.number="form.updateInterval"
             type="number"
             min="1"
             step="1"
             class="input input-sm w-24"
+            :placeholder="String(SUB_DEFAULTS.updateInterval)"
           />
         </div>
       </div>
@@ -261,7 +266,16 @@ const { t } = useI18n()
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 const dialogOpen = ref(false)
 const editingId = ref<string | null>(null)
-const form = ref({ name: '', url: '', enabled: true, autoUpdate: false, updateInterval: 1440 })
+// 表单留空的默认值：灰字占位展示，保存时回落
+const SUB_DEFAULTS = { updateInterval: 1440 }
+
+const form = ref<{
+  name: string
+  url: string
+  enabled: boolean
+  autoUpdate: boolean
+  updateInterval?: number
+}>({ name: '', url: '', enabled: true, autoUpdate: false, updateInterval: undefined })
 
 const subscriptions = computed(() => subscriptionList.value)
 const subscriptionSearch = ref('')
@@ -277,7 +291,13 @@ const hasValidUrl = computed(() => /^https?:\/\//.test(form.value.url.trim()))
 
 const openCreateDialog = () => {
   editingId.value = null
-  form.value = { name: '', url: '', enabled: true, autoUpdate: false, updateInterval: 1440 }
+  form.value = {
+    name: '',
+    url: '',
+    enabled: true,
+    autoUpdate: false,
+    updateInterval: undefined,
+  }
   dialogOpen.value = true
 }
 
@@ -288,7 +308,11 @@ const openEditDialog = (item: SubscriptionItem) => {
     url: item.url,
     enabled: item.enabled,
     autoUpdate: item.autoUpdate,
-    updateInterval: item.updateInterval ?? 1440,
+    // 与默认值相同则留空，由灰字占位代替
+    updateInterval:
+      item.updateInterval && item.updateInterval !== SUB_DEFAULTS.updateInterval
+        ? item.updateInterval
+        : undefined,
   }
   dialogOpen.value = true
 }
@@ -317,7 +341,7 @@ const saveSubscription = () => {
     enabled: form.value.enabled,
     autoUpdate: form.value.autoUpdate,
     updateInterval: form.value.autoUpdate
-      ? Math.max(1, Math.floor(Number(form.value.updateInterval) || 1440))
+      ? Math.max(1, Math.floor(Number(form.value.updateInterval) || SUB_DEFAULTS.updateInterval))
       : undefined,
   }
 

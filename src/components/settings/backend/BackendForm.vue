@@ -9,67 +9,70 @@
   探测状态藏进子组件父级就读不到了。
 -->
 <template>
-  <div class="flex flex-col gap-3">
-    <div class="flex gap-2">
-      <div class="flex w-24 flex-none flex-col gap-1">
-        <label class="text-sm">{{ $t('protocol') }}</label>
-        <SelectInput
-          class="select select-sm w-full"
-          v-model="model.protocol"
-          :options="[
-            { value: 'http', label: 'HTTP' },
-            { value: 'https', label: 'HTTPS' },
-          ]"
-        />
-      </div>
-      <div class="flex min-w-0 flex-1 flex-col gap-1">
-        <label class="text-sm">{{ $t('host') }}</label>
-        <TextInput
-          class="w-full"
-          name="username"
-          autocomplete="username"
-          v-model="model.host"
-          placeholder="127.0.0.1"
-        />
-      </div>
-      <div class="flex w-20 flex-none flex-col gap-1">
-        <label class="text-sm">{{ $t('port') }}</label>
-        <TextInput
-          class="w-full"
-          v-model="model.port"
-          placeholder="9090"
-        />
-      </div>
+  <div class="settings-grid node-form-grid">
+    <div class="setting-item node-span-2">
+      <div class="setting-item-label shrink-0!">{{ $t('host') }}</div>
+      <!-- 连接地址框：尾部 X 一键清空 -->
+      <TextInput
+        class="node-long-input"
+        name="username"
+        autocomplete="username"
+        clearable
+        v-model="model.host"
+        placeholder="127.0.0.1"
+      />
+    </div>
+    <div class="setting-item">
+      <div class="setting-item-label shrink-0!">{{ $t('protocol') }}</div>
+      <SelectInput
+        class="select select-sm min-w-24"
+        v-model="model.protocol"
+        :options="[
+          { value: 'http', label: 'HTTP' },
+          { value: 'https', label: 'HTTPS' },
+        ]"
+      />
+    </div>
+    <div class="setting-item">
+      <div class="setting-item-label shrink-0!">{{ $t('port') }}</div>
+      <TextInput
+        class="w-24"
+        v-model="model.port"
+        placeholder="9090"
+      />
     </div>
 
-    <div class="flex flex-col gap-1">
-      <label class="flex items-center gap-1 text-sm">
-        <span>{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
+    <div class="setting-item node-span-2">
+      <div class="setting-item-label flex shrink-0! items-center gap-1">
+        <span>{{ $t('secondaryPath') }}</span>
         <span
           class="tooltip flex-none"
           :data-tip="$t('secondaryPathTip')"
         >
           <QuestionMarkCircleIcon class="h-4 w-4" />
         </span>
-      </label>
+      </div>
       <TextInput
-        class="w-full"
+        class="node-long-input"
         v-model="model.secondaryPath"
+        clearable
+        :placeholder="$t('secondaryPathPlaceholder')"
       />
     </div>
-    <div class="flex flex-col gap-1">
-      <label class="text-sm">{{ $t('label') }}</label>
+    <div class="setting-item node-span-2">
+      <div class="setting-item-label shrink-0!">{{ $t('label') }}</div>
       <TextInput
-        class="w-full"
+        class="node-long-input"
         v-model="model.label"
+        :placeholder="$t('backendLabelPlaceholder')"
       />
     </div>
 
-    <div class="flex flex-col gap-1">
-      <label class="text-sm">{{ $t('password') }}</label>
+    <div class="setting-item node-span-2">
+      <div class="setting-item-label shrink-0!">{{ $t('password') }}</div>
       <input
         type="password"
-        class="input input-sm w-full"
+        class="input input-sm node-long-input"
         autocomplete="current-password"
         v-model="model.password"
       />
