@@ -1,6 +1,6 @@
 import type { LANG_MESSAGE } from './en'
 
-const ru: LANG_MESSAGE = {
+const ru: Partial<LANG_MESSAGE> = {
   // Navigation
   setup: 'Настройка',
   overview: 'Обзор',
@@ -33,7 +33,8 @@ const ru: LANG_MESSAGE = {
   subscriptionUrl: 'URL подписки',
   subscriptionAutoUpdate: 'Автообновление',
   subscriptionEnabled: 'Включено',
-  subscriptionDescription: 'Управляйте подписками прокси в одном месте: быстро добавляйте, редактируйте, включайте и обновляйте.',
+  subscriptionDescription:
+    'Управляйте подписками прокси в одном месте: быстро добавляйте, редактируйте, включайте и обновляйте.',
   subscriptionEmpty: 'Подписок пока нет. Добавьте первую ссылку, чтобы начать.',
   subscriptionStatus: 'Статус',
   subscriptionUpdatedAt: 'Последнее обновление',
@@ -49,9 +50,9 @@ const ru: LANG_MESSAGE = {
   subscriptionRefreshAll: 'Обновить все',
   nodePool: 'Пулы узлов',
   nodePools: 'Пулы узлов',
-  nodePoolDescription: 'Управляйте объединёнными пулами узлов, дедупликацией и вручную добавленными узлами.',
+  nodePoolDescription:
+    'Управляйте объединёнными пулами узлов, дедупликацией и вручную добавленными узлами.',
   nodePoolName: 'Имя пула',
-  nodePoolDedupe: 'Удалять дубликаты',
   nodePoolEnabled: 'Включено',
   nodePoolNodes: 'Узлы',
   nodePoolAddNode: 'Добавить узел',
@@ -60,7 +61,8 @@ const ru: LANG_MESSAGE = {
   nodePoolEditTitle: 'Редактировать пул',
   nodePoolAddTitle: 'Добавить пул',
   nodePoolEmpty: 'Пулы узлов пока отсутствуют. Создайте один, чтобы начать управлять узлами.',
-  nodePoolEmptyDesc: 'Пулы узлов позволяют организовывать, удалять дубликаты и тестировать узлы перед созданием групп селектора.',
+  nodePoolEmptyDesc:
+    'Пулы узлов позволяют организовывать, удалять дубликаты и тестировать узлы перед созданием групп селектора.',
   nodeEditTitle: 'Редактировать узел',
   nodeAddTitle: 'Добавить узел',
   nodeName: 'Имя',
@@ -389,7 +391,6 @@ const ru: LANG_MESSAGE = {
   swipeInPages: 'Провести для переключения страниц',
   simpleCardPreset: 'Простой',
   detailedCardPreset: 'Подробный',
-  refresh: 'Обновить',
   reset: 'Сбросить',
   resetSettings: 'Сбросить настройки',
   resetSettingsConfirm:
@@ -405,7 +406,6 @@ const ru: LANG_MESSAGE = {
   tipForFixed:
     'Текущая стратегическая группа закреплена за текущим узлом. Нажмите «Тест скорости», чтобы восстановить поведение {type}.',
   remoteAddress: 'удалённый адрес',
-  save: 'Сохранить',
   moreDetails: 'Подробнее',
   moreSettings: 'Дополнительные настройки',
   customIcon: 'Пользовательская иконка',

@@ -1,6 +1,6 @@
 import type { LANG_MESSAGE } from './en'
 
-const zhTW: LANG_MESSAGE = {
+const zhTW: Partial<LANG_MESSAGE> = {
   // Navigation
   setup: '配置',
   overview: '概覽',
@@ -51,7 +51,6 @@ const zhTW: LANG_MESSAGE = {
   nodePools: '節點池',
   nodePoolDescription: '管理合併節點池、去重及手動插入的節點。',
   nodePoolName: '池名稱',
-  nodePoolDedupe: '去除重複',
   nodePoolEnabled: '啟用',
   nodePoolNodes: '節點',
   nodePoolAddNode: '新增節點',
@@ -383,7 +382,6 @@ const zhTW: LANG_MESSAGE = {
   swipeInPages: '滑動切換頁面',
   simpleCardPreset: '簡潔預設',
   detailedCardPreset: '詳細預設',
-  refresh: '重新整理',
   reset: '重設',
   resetSettings: '恢復預設設定',
   resetSettingsConfirm: '確定要將面板設定恢復為預設值嗎？此操作無法復原。',
@@ -397,7 +395,6 @@ const zhTW: LANG_MESSAGE = {
   disconnectOnRuleDisable: '禁用規則時打斷連接',
   tipForFixed: '當前策略組被固定在了當前節點，點擊測速來恢復{type}行為',
   remoteAddress: '遠端地址',
-  save: '儲存',
   moreDetails: '更多詳情',
   moreSettings: '更多設定',
   customIcon: '自訂圖示',

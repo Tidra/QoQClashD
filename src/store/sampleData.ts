@@ -1,8 +1,30 @@
-import { addNode, addNodePool, buildMergedNodeList, nodePools } from '@/store/nodePool'
-import type { CustomNode } from '@/store/nodePool'
-import { pruneProxyGroupMembers, proxyGroups, syncAllNodesGroup, upsertProxyGroup } from '@/store/proxyGroups'
-import { subscriptionList } from '@/store/subscriptions'
 import { useStorage, whenStorageReady } from '@/helper/storage'
+import type { CustomNode } from '@/store/nodePool'
+import { addNode, addNodePool, buildMergedNodeList, nodePools } from '@/store/nodePool'
+import {
+  proxyGroups,
+  pruneProxyGroupMembers,
+  syncAllNodesGroup,
+  upsertProxyGroup,
+} from '@/store/proxyGroups'
+import type {
+  InboundDraft,
+  RoutingRuleDraft,
+  RuleProviderDraft,
+  SubRuleDraft,
+} from '@/store/routing'
+import {
+  routingInbounds,
+  routingRuleProviders,
+  routingRules,
+  ruleToString,
+  seedRoutingDefaults,
+  subRules,
+  upsertRoutingInbound,
+  upsertRuleProvider,
+  upsertSubRule,
+} from '@/store/routing'
+import { subscriptionList } from '@/store/subscriptions'
 import { watch } from 'vue'
 
 /**
@@ -74,6 +96,8 @@ export function seedSampleData() {
 
 const SAMPLE_DATA_VERSION_V2 = 5
 const SAMPLE_DATA_VERSION = 7
+const ROUTING_SAMPLE_DATA_VERSION = 8
+const ROUTING_SAMPLE_DATA_VERSION_V2 = 9
 const sampleDataVersion = useStorage<number>('config/sample-data-version', 0)
 
 /**
@@ -86,12 +110,56 @@ export function seedSampleDataV2() {
   let pool = nodePools.value.find((item) => item.name === '示例节点池·v2')
   if (!pool) pool = addNodePool({ name: '示例节点池·v2', enabled: true, dedupe: true, nodes: [] })
   const v2Nodes: Omit<CustomNode, 'id'>[] = [
-    { name: 'JP-Tokyo-02', type: 'vless', server: 'jp2.example.com', port: 8443, sni: 'jp2.example.com', fingerprint: 'chrome', wsPath: '/vless' },
-    { name: 'HK-CT-HY2', type: 'hysteria2', server: 'hk-ct.example.com', port: 443, sni: 'hk-ct.example.com', tfo: true },
-    { name: 'US-LA-03', type: 'trojan', server: 'la.example.com', port: 443, password: 'trojan-pass', sni: 'la.example.com' },
-    { name: 'TW-Hinet-01', type: 'ss', server: 'tw.example.com', port: 8389, cipher: 'aes-256-gcm', password: 'ss-pass' },
-    { name: 'KR-Seoul-01', type: 'vmess', server: 'kr.example.com', port: 443, cipher: 'auto', sni: 'kr.example.com', wsPath: '/ws' },
-    { name: 'SG-Frieren-03', type: 'vless', server: 'sg3.example.com', port: 2053, sni: 'sg3.example.com', alpn: ['h2', 'http/1.1'] },
+    {
+      name: 'JP-Tokyo-02',
+      type: 'vless',
+      server: 'jp2.example.com',
+      port: 8443,
+      sni: 'jp2.example.com',
+      fingerprint: 'chrome',
+      wsPath: '/vless',
+    },
+    {
+      name: 'HK-CT-HY2',
+      type: 'hysteria2',
+      server: 'hk-ct.example.com',
+      port: 443,
+      sni: 'hk-ct.example.com',
+      tfo: true,
+    },
+    {
+      name: 'US-LA-03',
+      type: 'trojan',
+      server: 'la.example.com',
+      port: 443,
+      password: 'trojan-pass',
+      sni: 'la.example.com',
+    },
+    {
+      name: 'TW-Hinet-01',
+      type: 'ss',
+      server: 'tw.example.com',
+      port: 8389,
+      cipher: 'aes-256-gcm',
+      password: 'ss-pass',
+    },
+    {
+      name: 'KR-Seoul-01',
+      type: 'vmess',
+      server: 'kr.example.com',
+      port: 443,
+      cipher: 'auto',
+      sni: 'kr.example.com',
+      wsPath: '/ws',
+    },
+    {
+      name: 'SG-Frieren-03',
+      type: 'vless',
+      server: 'sg3.example.com',
+      port: 2053,
+      sni: 'sg3.example.com',
+      alpn: ['h2', 'http/1.1'],
+    },
   ]
   for (const node of v2Nodes) {
     if (pool.nodes.some((item) => item.name === node.name)) continue
@@ -268,6 +336,156 @@ export function seedSampleDataV3() {
   sampleDataVersion.value = SAMPLE_DATA_VERSION
 }
 
+/**
+ * 分流中心追加式样例：示例规则/子规则/入口 + 必需的默认规则与主入口。
+ * 只追加不删除；按 payload/名称/ID 去重，可安全重放。
+ */
+export function seedRoutingData() {
+  seedRoutingDefaults()
+  if (sampleDataVersion.value >= ROUTING_SAMPLE_DATA_VERSION) return
+
+  const existingSubNames = new Set(subRules.value.map((item) => item.name))
+  const sampleSubRules: SubRuleDraft[] = [
+    {
+      name: '局域网直连',
+      rules: [
+        'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+        'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+        'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+        'MATCH,DIRECT',
+      ],
+    },
+    {
+      name: '广告拦截',
+      rules: ['GEOSITE,category-ads-all,REJECT', 'DOMAIN-KEYWORD,adservice,REJECT', 'MATCH,PASS'],
+    },
+  ]
+  for (const sub of sampleSubRules) {
+    if (existingSubNames.has(sub.name)) continue
+    upsertSubRule(sub)
+  }
+
+  const existingRuleKeys = new Set(routingRules.value.map((rule) => ruleToString(rule)))
+  const sampleRules: Omit<RoutingRuleDraft, 'id'>[] = [
+    { type: 'DOMAIN', payload: 'dns.alidns.com', target: 'DIRECT', enabled: true },
+    { type: 'GEOSITE', payload: 'apple-cn', target: 'DIRECT', enabled: true },
+    { type: 'PROCESS-NAME', payload: 'telegram.exe', target: '手动选择', enabled: true },
+    { type: 'SUB-RULE', payload: '局域网直连', target: 'DIRECT', enabled: true },
+    { type: 'SUB-RULE', payload: '广告拦截', target: 'REJECT', enabled: true },
+    {
+      type: 'SRC-IP-CIDR',
+      payload: '192.168.1.201/32',
+      target: '手动选择',
+      noResolve: true,
+      enabled: true,
+    },
+    { type: 'DST-PORT', payload: '443', target: '自动最优', enabled: true },
+  ]
+  // 默认规则保持垫底：示例规则插到内置规则之前
+  const extra: RoutingRuleDraft[] = []
+  for (const rule of sampleRules) {
+    if (existingRuleKeys.has(ruleToString({ ...rule, id: '' }))) continue
+    extra.push({ ...rule, id: `routing-${extra.length}-${Math.random().toString(36).slice(2, 8)}` })
+  }
+  if (extra.length) {
+    const builtins = routingRules.value.filter((rule) => rule.builtin)
+    routingRules.value = [
+      ...routingRules.value.filter((rule) => !rule.builtin),
+      ...extra,
+      ...builtins,
+    ]
+  }
+
+  const existingInboundIds = new Set(routingInbounds.value.map((item) => item.id))
+  const sampleInbounds: InboundDraft[] = [
+    {
+      id: 'inbound-socks',
+      name: 'SOCKS5 入口',
+      type: 'socks',
+      port: 7891,
+      listen: '0.0.0.0',
+      udp: true,
+    },
+    {
+      id: 'inbound-tproxy',
+      name: 'TProxy 透明入口',
+      type: 'tproxy',
+      port: 7895,
+      listen: '0.0.0.0',
+      udp: true,
+      rule: '局域网直连',
+    },
+  ]
+  for (const inbound of sampleInbounds) {
+    if (existingInboundIds.has(inbound.id)) continue
+    upsertRoutingInbound(inbound)
+  }
+
+  sampleDataVersion.value = ROUTING_SAMPLE_DATA_VERSION
+}
+
+/**
+ * v9 追加式样例：规则集合（rule-providers）示例 + 引用它们的 RULE-SET 规则。
+ * 只追加不删除；按名称/规则字符串去重，可安全重放。
+ */
+export function seedRoutingDataV2() {
+  seedRoutingDefaults()
+  if (sampleDataVersion.value >= ROUTING_SAMPLE_DATA_VERSION_V2) return
+
+  const existingProviders = new Set(routingRuleProviders.value.map((item) => item.name))
+  const sampleProviders: RuleProviderDraft[] = [
+    {
+      name: 'ads',
+      type: 'http',
+      format: 'text',
+      behavior: 'domain',
+      url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Advertising/Advertising.txt',
+      interval: 86400,
+      proxy: 'DIRECT',
+    },
+    {
+      name: 'direct-cn',
+      type: 'http',
+      format: 'text',
+      behavior: 'domain',
+      url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt',
+      interval: 86400,
+    },
+    {
+      name: 'local-inline',
+      type: 'inline',
+      format: 'text',
+      behavior: 'domain',
+      payload: ['DOMAIN-SUFFIX,lan.local', 'DOMAIN-KEYWORD,intranet'],
+    },
+  ]
+  for (const provider of sampleProviders) {
+    if (existingProviders.has(provider.name)) continue
+    upsertRuleProvider(provider)
+  }
+
+  const existingRuleKeys = new Set(routingRules.value.map((rule) => ruleToString(rule)))
+  const sampleRules: Omit<RoutingRuleDraft, 'id'>[] = [
+    { type: 'RULE-SET', payload: 'ads', target: 'REJECT', enabled: true },
+    { type: 'RULE-SET', payload: 'direct-cn', target: 'DIRECT', enabled: true },
+  ]
+  const extra: RoutingRuleDraft[] = []
+  for (const rule of sampleRules) {
+    if (existingRuleKeys.has(ruleToString({ ...rule, id: '' }))) continue
+    extra.push({ ...rule, id: `routing-${extra.length}-${Math.random().toString(36).slice(2, 8)}` })
+  }
+  if (extra.length) {
+    const builtins = routingRules.value.filter((rule) => rule.builtin)
+    routingRules.value = [
+      ...routingRules.value.filter((rule) => !rule.builtin),
+      ...extra,
+      ...builtins,
+    ]
+  }
+
+  sampleDataVersion.value = ROUTING_SAMPLE_DATA_VERSION_V2
+}
+
 // 等存储完成首次服务器读取后再判断是否注入。
 // 若在读取完成前同步执行，nodePools 还是默认空值，会误判"无数据"注入示例，
 // 读取失败时示例数据还会被 watch 回写、覆盖数据库里的真实节点。
@@ -275,6 +493,8 @@ void whenStorageReady().then(() => {
   seedSampleData()
   seedSampleDataV2()
   seedSampleDataV3()
+  seedRoutingData()
+  seedRoutingDataV2()
 
   // 清理引用了不存在成员的旧代理组，再建立/同步内置"全部节点"组
   const nodeNames = () => buildMergedNodeList().map((node) => node.name)

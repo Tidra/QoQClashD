@@ -1,8 +1,8 @@
 import { API_SECRET } from '@/config/env'
 import type { StorageLike, UseStorageOptions } from '@vueuse/core'
-import type { MaybeRefOrGetter } from 'vue'
-import { ref, toValue, watch } from 'vue'
 import { useStorage as useVueUseStorage } from '@vueuse/core'
+import type { MaybeRefOrGetter, Ref } from 'vue'
+import { ref, toValue, watch } from 'vue'
 
 const isSessionStorage = (storage?: StorageLike) => storage === sessionStorage
 const cloneDefault = <T>(value: T): T => {
@@ -70,7 +70,7 @@ export function useStorage<T>(
   }
 
   const currentKey = toValue(key)
-  const state = ref(cloneDefault(toValue(defaults))) as { value: T }
+  const state = ref(cloneDefault(toValue(defaults))) as Ref<T>
   const loading = ref(true)
   // 水合期间发生的本地修改（种子注入、HMR 后重放等）不能被迟到的服务器旧值覆盖，
   // 且水合结束后要回写服务器，否则修改会两头丢失。

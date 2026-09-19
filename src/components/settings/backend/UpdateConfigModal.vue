@@ -13,7 +13,7 @@
       <SegmentedControl
         v-model="inputMode"
         :options="inputModeOptions"
-        :class="{'flex-1':''}"
+        :class="{ 'flex-1': '' }"
       />
 
       <!-- ===== 表单模式 ===== -->
@@ -34,7 +34,7 @@
         <!-- 端口设置 -->
         <div class="grid grid-cols-2 gap-2">
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Port</span>
+            <span class="text-base-content/60 text-xs">Port</span>
             <input
               v-model.number="formConfig.port"
               class="input input-bordered input-sm"
@@ -43,7 +43,7 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Socks Port</span>
+            <span class="text-base-content/60 text-xs">Socks Port</span>
             <input
               v-model.number="formConfig['socks-port']"
               class="input input-bordered input-sm"
@@ -52,7 +52,7 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Redir Port</span>
+            <span class="text-base-content/60 text-xs">Redir Port</span>
             <input
               v-model.number="formConfig['redir-port']"
               class="input input-bordered input-sm"
@@ -61,7 +61,7 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Mixed Port</span>
+            <span class="text-base-content/60 text-xs">Mixed Port</span>
             <input
               v-model.number="formConfig['mixed-port']"
               class="input input-bordered input-sm"
@@ -74,7 +74,7 @@
         <!-- 高级设置 -->
         <div class="grid grid-cols-2 gap-2">
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Bind Address</span>
+            <span class="text-base-content/60 text-xs">Bind Address</span>
             <input
               v-model="formConfig['bind-address']"
               class="input input-bordered input-sm"
@@ -82,7 +82,7 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">Log Level</span>
+            <span class="text-base-content/60 text-xs">Log Level</span>
             <select
               v-model="formConfig['log-level']"
               class="select select-bordered select-sm"
@@ -118,7 +118,7 @@
         <!-- TUN 配置 -->
         <div
           v-if="formConfig.tun"
-          class="rounded-xl border border-base-300 bg-base-100 p-3"
+          class="border-base-300 bg-base-100 rounded-xl border p-3"
         >
           <label class="flex items-center gap-2 text-sm font-medium">
             <input
@@ -135,7 +135,7 @@
           >
             <div class="grid grid-cols-2 gap-2">
               <div class="flex flex-col gap-1">
-                <span class="text-xs text-base-content/60">{{ $t('tunStack') }}</span>
+                <span class="text-base-content/60 text-xs">{{ $t('tunStack') }}</span>
                 <select
                   v-model="formConfig.tun.stack"
                   class="select select-bordered select-sm"
@@ -146,7 +146,7 @@
                 </select>
               </div>
               <div class="flex flex-col gap-1">
-                <span class="text-xs text-base-content/60">{{ $t('tunMtu') }}</span>
+                <span class="text-base-content/60 text-xs">{{ $t('tunMtu') }}</span>
                 <input
                   v-model.number="formConfig.tun.mtu"
                   class="input input-bordered input-sm"
@@ -158,7 +158,7 @@
             </div>
 
             <div class="flex flex-col gap-1">
-              <span class="text-xs text-base-content/60">{{ $t('tunDevice') }}</span>
+              <span class="text-base-content/60 text-xs">{{ $t('tunDevice') }}</span>
               <input
                 v-model="formConfig.tun.device"
                 class="input input-bordered input-sm"
@@ -198,7 +198,7 @@
             <ArrowDownTrayIcon class="h-3.5 w-3.5" />
             {{ $t('dualModeSyncToYaml') }}
           </button>
-          <span class="text-xs text-base-content/50">{{ $t('dualModeConfig') }}</span>
+          <span class="text-base-content/50 text-xs">{{ $t('dualModeConfig') }}</span>
         </div>
       </div>
 
@@ -267,7 +267,7 @@
 </template>
 
 <script setup lang="ts">
-import { configs, fetchConfigs, updateConfigsAPI } from '@/assembly/config'
+import { fetchConfigs, updateConfigsAPI } from '@/assembly/config'
 import { fetchProxies } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
 import { notifyActionPending, showNotification } from '@/helper/notification'
@@ -331,7 +331,8 @@ const formConfig = reactive({
 // 表单 → YAML 文本
 function buildYamlFromForm(): string {
   const obj: Record<string, unknown> = { ...formConfig }
-  if (obj.tun && !obj.tun.enable) {
+  const tun = obj.tun as { enable?: boolean } | undefined
+  if (tun && !tun.enable) {
     obj.tun = { enable: false }
   }
   return serializeYaml(obj)
@@ -395,7 +396,7 @@ const syncYamlToForm = () => {
           const match = trimmed.match(/^(\S+):\s*(.*)$/)
           if (match) {
             const [, key, val] = match
-            formConfig.tun[key] = parseYamlValue(val)
+            ;(formConfig.tun as Record<string, unknown>)[key] = parseYamlValue(val)
           }
         } else {
           inTun = false
@@ -408,7 +409,7 @@ const syncYamlToForm = () => {
         if (match) {
           const [, key, val] = match
           if (key in formConfig && key !== 'tun') {
-            formConfig[key as keyof typeof formConfig] = parseYamlValue(val)
+            ;(formConfig as Record<string, unknown>)[key] = parseYamlValue(val)
           }
         }
       }
@@ -440,10 +441,7 @@ const handleUpdateConfigs = async () => {
   try {
     // 表单模式下，把表单序列化为 YAML 传给后端
     const payload = inputMode.value === 'form' ? buildYamlFromForm() : configPayload.value
-    await updateConfigsAPI(
-      { path: configPath.value, payload },
-      forceUpdate.value,
-    )
+    await updateConfigsAPI({ path: configPath.value, payload }, forceUpdate.value)
     reloadAll()
     modalValue.value = false
     showNotification({
