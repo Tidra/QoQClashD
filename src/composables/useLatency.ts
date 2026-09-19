@@ -11,12 +11,13 @@ export function useLatency() {
     isTesting.value = true
     try {
       await proxyLatencyTest(nodeKey, 'https://www.google.com/generate_204', timeoutMs)
-      const latency = getLatencyByName(nodeKey)
-      latencyMap.value[nodeKey] = latency || null
-      return latencyMap.value[nodeKey]
+      latencyMap.value[nodeKey] = getLatencyByName(nodeKey) || null
+    } catch {
+      latencyMap.value[nodeKey] = null
     } finally {
       isTesting.value = false
     }
+    return latencyMap.value[nodeKey] ?? null
   }
 
   return {
