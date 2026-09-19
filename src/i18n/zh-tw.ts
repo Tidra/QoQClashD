@@ -574,6 +574,7 @@ const zhTW: Partial<LANG_MESSAGE> = {
   applyConfig: '應用配置',
   applyConfigSummary: '將面板草稿組合為內核配置並重啟內核生效',
   applyConfigSuccess: '配置已應用，內核已重啟',
+  applyConfigPendingTip: '有新配置尚未下發內核，點擊直接應用',
   actions: '操作',
   showAllPreset: '全部顯示',
   minimalPreset: '精簡顯示',

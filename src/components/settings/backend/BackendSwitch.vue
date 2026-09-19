@@ -1,7 +1,8 @@
 <!--
   纯粹的后端切换器。以前它是「切换 + 编辑 + 新增」三合一,而且那个齿轮图标按钮
   实际做的是「清空 activeUuid 再跳 setup 页」—— 想加一个后端得先把自己登出。
-  现在增删改统一进 BackendManager,这里只管选一个后端。
+  现在增删改统一进 BackendManager,这里只管选一个后端;
+  「管理后端」入口已按要求撤掉,但「操作」二级菜单保留 —— 侧边栏常驻,内核运维不用跳设置页。
 
   用弹出列表而不是原生 select:每一项要带上「此刻通不通、多少延迟」,
   切过去之前就知道结果,而不是切完看着空页面才发现。
@@ -16,16 +17,33 @@
     <!--
       折叠的侧边栏只剩一列图标,状态就不在这儿表了:一列小按钮里再挤进一个状态点
       (或者给图标上色)只是噪声,想知道通不通展开列表就有。这里只保留入口和名字。
+      例外:草稿有改动但还没应用给内核时,红色角标闪烁提醒 + 点击直接应用(不弹切换列表)。
     -->
     <button
       v-if="compact"
       ref="triggerRef"
-      class="btn btn-circle btn-sm"
+      class="btn btn-circle btn-sm relative"
       :aria-label="$t('backend')"
-      @click="toggle"
+      :title="pendingConfigChanges ? $t('applyConfigPendingTip') : undefined"
+      @click="handleCompactClick"
       @mouseenter="showLabelTip"
     >
-      <ServerIcon class="h-5 w-5" />
+      <span
+        v-if="applyingConfig"
+        class="loading loading-spinner h-5 w-5"
+      ></span>
+      <ServerIcon
+        v-else
+        class="h-5 w-5"
+      />
+      <!-- 角标样式对齐内核标题的更新提醒点（ping 圈 + 实心点），颜色保持红。 -->
+      <span
+        v-if="pendingConfigChanges && !applyingConfig"
+        class="absolute -top-1 -right-1 flex"
+      >
+        <span class="bg-error absolute h-2 w-2 animate-ping rounded-full"></span>
+        <span class="bg-error h-2 w-2 rounded-full"></span>
+      </span>
     </button>
 
     <button
@@ -91,33 +109,33 @@
             </button>
           </div>
 
-          <div
-            v-if="backendList.length"
-            class="bg-base-content/10 mx-1 h-px flex-none"
-          ></div>
-
+          <!-- 空列表兜底:还没有任何后端时从这里添加;有后端时菜单只有列表 + 操作。 -->
           <button
-            v-if="menuActions.length"
-            ref="actionsTriggerRef"
-            class="flex flex-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
-            :class="isActionsOpen ? 'bg-base-200' : 'hover:bg-base-200'"
-            :aria-expanded="isActionsOpen"
-            @click="toggleActions"
-            @pointerenter="hoverOpenActions"
-          >
-            <WrenchScrewdriverIcon class="h-4 w-4 flex-none opacity-60" />
-            <span class="min-w-0 flex-1 truncate">{{ $t('actions') }}</span>
-            <ChevronRightIcon class="h-4 w-4 flex-none opacity-50" />
-          </button>
-
-          <button
+            v-if="!backendList.length"
             class="hover:bg-base-200 flex flex-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
             @click="manage"
-            @mouseenter="closeActions"
           >
             <Cog6ToothIcon class="h-4 w-4 flex-none opacity-60" />
-            {{ backendList.length ? $t('manageBackends') : $t('addBackend') }}
+            {{ $t('addBackend') }}
           </button>
+
+          <template v-if="backendList.length">
+            <div class="bg-base-content/10 mx-1 h-px flex-none"></div>
+
+            <button
+              v-if="menuActions.length"
+              ref="actionsTriggerRef"
+              class="flex flex-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+              :class="isActionsOpen ? 'bg-base-200' : 'hover:bg-base-200'"
+              :aria-expanded="isActionsOpen"
+              @click="toggleActions"
+              @pointerenter="hoverOpenActions"
+            >
+              <WrenchScrewdriverIcon class="h-4 w-4 flex-none opacity-60" />
+              <span class="min-w-0 flex-1 truncate">{{ $t('actions') }}</span>
+              <ChevronRightIcon class="h-4 w-4 flex-none opacity-50" />
+            </button>
+          </template>
         </div>
       </Transition>
 
@@ -160,6 +178,9 @@
 import BackendStatusDot from '@/components/common/BackendStatusDot.vue'
 import { menuBackendActions, type BackendAction } from '@/composables/backendActions'
 import { useBackendListProbe } from '@/composables/backendListProbe'
+import { applyComposedConfig, pendingConfigChanges } from '@/helper/applyConfig'
+import { notifyRequestError } from '@/helper/requestError'
+import { showNotification } from '@/helper/notification'
 import { useTooltip } from '@/helper/tooltip'
 import { getLabelFromBackend } from '@/helper/utils'
 import {
@@ -183,13 +204,11 @@ const MIN_WIDTH = 224
 const ACTIONS_MIN_WIDTH = 176
 const VIEWPORT_PADDING = 8
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     compact?: boolean
-    /** 设置页里这些动作本来就成排摆着,菜单里不必再来一遍 */
-    showActions?: boolean
   }>(),
-  { compact: false, showActions: true },
+  { compact: false },
 )
 
 const triggerRef = ref<HTMLButtonElement>()
@@ -202,7 +221,7 @@ const actionsPanelRef = ref<HTMLDivElement>()
 const isActionsOpen = ref(false)
 const actionsPanelStyle = ref<CSSProperties>({})
 
-const menuActions = computed(() => (props.showActions ? menuBackendActions.value : []))
+const menuActions = computed(() => menuBackendActions.value)
 
 // Teleport 的目标是挂载本组件的 #app-content,首帧还不在 DOM 里。
 const isReady = ref(false)
@@ -361,13 +380,37 @@ const open = () => {
 
 const toggle = () => (isOpen.value ? close() : open())
 
+// 折叠侧栏的后端按钮:有还没下发内核的草稿改动时语义变成「直接应用」,
+// 否则照常弹后端切换列表。
+const applyingConfig = ref(false)
+const applyPendingConfig = async () => {
+  if (applyingConfig.value) return
+  applyingConfig.value = true
+  close()
+  try {
+    await applyComposedConfig()
+    showNotification({ content: 'applyConfigSuccess', type: 'alert-success' })
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    applyingConfig.value = false
+  }
+}
+const handleCompactClick = () => {
+  if (pendingConfigChanges.value) {
+    void applyPendingConfig()
+    return
+  }
+  toggle()
+}
+
 const switchTo = (uuid: string) => {
   setActiveBackend(uuid)
   close()
 }
 
 const manage = () => {
-  openBackendManager(backendList.value.length ? { mode: 'list' } : { mode: 'create' })
+  openBackendManager({ mode: 'create' })
   close()
 }
 

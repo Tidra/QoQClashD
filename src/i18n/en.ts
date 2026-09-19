@@ -685,7 +685,7 @@ const en = {
   runtimeControl: 'Runtime control',
   viewAction: 'View',
   reloadConfigsSummary:
-    'View shows the current YAML read-only (edits happen on the Nodes and Rules pages); Reload re-reads the config file.',
+    'View shows the current YAML read-only (edits happen on the Nodes and Rules pages); Refresh composes the latest panel drafts and applies them to the kernel (restarts it).',
   kernelDirSummary: 'Editable · directory containing the mihomo binary',
   configDirSummary: 'Editable · where the main and derived configs are stored',
   kernelStatus: 'Kernel status',
@@ -715,6 +715,13 @@ const en = {
   currentConfigYaml: 'Current YAML config',
   currentConfigYamlHint:
     'Composed from panel nodes, groups, rules and inbound drafts; viewable without a running kernel.',
+  configYamlTab: 'Full config',
+  configDiffTab: 'Diff',
+  configDiffHint:
+    'Versus the last applied config: - only in the old one, + new in the panel draft.',
+  configDiffNoBaseline: 'No applied config yet to compare against; showing the full draft only.',
+  configDiffUnchanged: 'Panel draft matches the applied config; no differences.',
+  configDiffGap: '⋯ {count} unchanged lines',
   copyFailed: 'Copy failed',
   settingsSectionProxyDisplay: 'Groups and display',
   settingsSectionProxyAdvanced: 'Icons and advanced settings',
@@ -723,6 +730,7 @@ const en = {
   applyConfig: 'Apply config',
   applyConfigSummary: 'Compose panel drafts into the kernel config and restart the kernel',
   applyConfigSuccess: 'Config applied, kernel restarted',
+  applyConfigPendingTip: 'Unapplied config changes; click to apply now',
   showAllPreset: 'Show all',
   minimalPreset: 'Minimal view',
   moveUp: 'Move up',

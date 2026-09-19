@@ -463,19 +463,20 @@
                 >
                   <BoltIcon class="h-3.5 w-3.5" />
                 </button>
+                <!-- 内置「全部节点」组不可编辑/删除，直接隐藏图标 -->
                 <button
+                  v-if="!isProtectedGroup(group.name)"
                   type="button"
                   class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                  :disabled="isProtectedGroup(group.name)"
                   :title="$t('edit')"
                   @click.stop="openEditGroup(group)"
                 >
                   <PencilIcon class="h-3.5 w-3.5" />
                 </button>
                 <button
+                  v-if="!isProtectedGroup(group.name)"
                   type="button"
                   class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
-                  :disabled="isProtectedGroup(group.name)"
                   :title="$t('proxyGroupEditorDeleteGroup')"
                   @click.stop="deleteRealGroup(group)"
                 >
@@ -536,30 +537,30 @@
                     class="h-3 w-3 shrink-0"
                   />
                 </button>
-                <template v-if="memberKind(member) === 'node'">
+                <!-- 对齐源代码：有延迟时延迟文本替代测速图标，点击可重新测速 -->
+                <button
+                  v-if="memberKind(member) === 'node'"
+                  type="button"
+                  class="shrink-0 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30"
+                  :disabled="isNodeTesting(member)"
+                  :title="$t('nodeTestLatency')"
+                  @click.stop="testNode(member)"
+                >
                   <span
-                    v-if="latencyMap[member] !== undefined"
-                    class="shrink-0 text-[10px] opacity-70"
+                    v-if="isNodeTesting(member)"
+                    class="loading loading-spinner loading-xs"
+                  ></span>
+                  <span
+                    v-else-if="latencyMap[member] !== undefined"
+                    class="text-[10px] leading-none"
                     :class="latencyDisplayClass(member)"
                     >{{ latencyDisplayText(member) }}</span
                   >
-                  <button
-                    type="button"
-                    class="shrink-0 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30"
-                    :disabled="isNodeTesting(member)"
-                    :title="$t('nodeTestLatency')"
-                    @click.stop="testNode(member)"
-                  >
-                    <span
-                      v-if="isNodeTesting(member)"
-                      class="loading loading-spinner loading-xs"
-                    ></span>
-                    <BoltIcon
-                      v-else
-                      class="h-3 w-3"
-                    />
-                  </button>
-                </template>
+                  <BoltIcon
+                    v-else
+                    class="h-3 w-3"
+                  />
+                </button>
               </div>
             </div>
             <button
@@ -668,18 +669,18 @@
                 </td>
                 <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
                   <button
+                    v-if="!isProtectedGroup(group.name)"
                     type="button"
                     class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                    :disabled="isProtectedGroup(group.name)"
                     :title="$t('edit')"
                     @click="openEditGroup(group)"
                   >
                     <PencilIcon class="h-3.5 w-3.5" />
                   </button>
                   <button
+                    v-if="!isProtectedGroup(group.name)"
                     type="button"
                     class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
-                    :disabled="isProtectedGroup(group.name)"
                     :title="$t('proxyGroupEditorDeleteGroup')"
                     @click="deleteRealGroup(group)"
                   >

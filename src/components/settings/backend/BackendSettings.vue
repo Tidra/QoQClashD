@@ -184,8 +184,8 @@
     <template v-if="hasVisibleActions">
       <div class="settings-section-label">{{ $t('settingsSectionCoreOperations') }}</div>
       <div class="settings-grid">
-        <!-- 重载配置独占一行：查看（只读 YAML 弹窗）+ 重载。内核没起来时此行仍在，
-             只是重载禁用 —— 查看不依赖内核，行也不该跟着连接状态闪进闪出。 -->
+        <!-- 重载配置独占一行：查看（只读 YAML 弹窗）+ 彩色刷新（应用面板草稿并下发内核）。
+             内核没起来时此行仍在，只是刷新禁用 —— 查看不依赖内核，行也不该跟着连接状态闪进闪出。 -->
         <SettingItem :setting-key="k.reloadConfigs">
           <div class="setting-item-label">
             {{ $t('reloadConfigs') }}
@@ -193,7 +193,9 @@
               {{ $t('reloadConfigsSummary') }}
             </div>
           </div>
-          <div class="flex items-center gap-2">
+          <!-- shrink-0：daisyUI 的 .btn 自带 flex-shrink:0，控件容器不收缩时
+               长标签会把整组按钮挤出内容区、贴到卡片边缘。 -->
+          <div class="flex shrink-0 items-center gap-2">
             <button
               class="btn btn-sm btn-ghost"
               @click="showYamlViewer = true"
@@ -201,31 +203,28 @@
               {{ $t('viewAction') }}
             </button>
             <button
-              class="btn btn-sm btn-primary"
+              class="btn btn-sm relative min-w-11"
               :disabled="applyingConfig"
               :title="$t('applyConfigSummary')"
+              :aria-label="$t('applyConfig')"
               @click="applyDraftConfig"
             >
               <span
                 v-if="applyingConfig"
                 class="loading loading-spinner h-4 w-4"
               ></span>
-              <template v-else>{{ $t('applyConfig') }}</template>
-            </button>
-            <button
-              class="btn btn-sm min-w-11"
-              :disabled="!reloadConfigsAction || reloadConfigsAction.running"
-              :aria-label="$t('reloadConfigs')"
-              @click="reloadConfigsAction?.run()"
-            >
-              <span
-                v-if="reloadConfigsAction?.running"
-                class="loading loading-spinner h-4 w-4"
-              ></span>
               <ArrowPathIcon
                 v-else
                 class="h-4 w-4"
               />
+              <!-- 角标样式对齐内核标题的更新提醒点（ping 圈 + 实心点），颜色保持红。 -->
+              <span
+                v-if="pendingConfigChanges && !applyingConfig"
+                class="absolute -top-1 -right-1 flex"
+              >
+                <span class="bg-error absolute h-2 w-2 animate-ping rounded-full"></span>
+                <span class="bg-error h-2 w-2 rounded-full"></span>
+              </span>
             </button>
           </div>
         </SettingItem>
@@ -286,7 +285,7 @@ import {
   waitKernelRunning,
 } from '@/composables/useKernelBackend'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
-import { applyComposedConfig } from '@/helper/applyConfig'
+import { applyComposedConfig, pendingConfigChanges } from '@/helper/applyConfig'
 import { notifyRequestError } from '@/helper/requestError'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
@@ -543,9 +542,6 @@ const isVisibleDnsQuery = useIsSettingVisible(k.DNSQuery)
 // 已整体移到分流中心「入口」的主入口，更新配置入口也移除（配置编辑在节点页/分流中心进行），
 // 设置页运维区只留重载配置一行特殊布局 + 其余图标动作。
 const kernelCardKeys = new Set([k.upgradeCore, k.restartCore])
-const reloadConfigsAction = computed(() =>
-  backendActions.value.find((action) => action.key === k.reloadConfigs),
-)
 const coreOperations = computed(() =>
   backendActions.value.filter(
     (action) => !kernelCardKeys.has(action.key) && action.key !== k.reloadConfigs,

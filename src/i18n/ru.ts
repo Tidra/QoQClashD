@@ -590,6 +590,7 @@ const ru: Partial<LANG_MESSAGE> = {
   applyConfig: 'Применить конфигурацию',
   applyConfigSummary: 'Собрать черновики панели в конфиг ядра и перезапустить ядро',
   applyConfigSuccess: 'Конфигурация применена, ядро перезапущено',
+  applyConfigPendingTip: 'Есть неприменённые изменения конфигурации — нажмите, чтобы применить',
   actions: 'Действия',
   showAllPreset: 'Показать все',
   minimalPreset: 'Минимальный вид',

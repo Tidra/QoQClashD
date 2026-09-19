@@ -3,10 +3,13 @@ import { computed, ref } from 'vue'
 
 type LatencyMap = Record<string, number | null>
 
+// 模块级单例：节点/代理组两个视图各挂一份 NodePoolPage，
+// 共享同一张延迟表才能让节点测速结果直接出现在代理组成员里。
+const latencyMap = ref<LatencyMap>({})
+// 按节点跟踪测速中的名字，允许多个节点并发测试互不阻塞
+const testingNodes = ref<Set<string>>(new Set())
+
 export function useLatency() {
-  const latencyMap = ref<LatencyMap>({})
-  // 按节点跟踪测速中的名字，允许多个节点并发测试互不阻塞
-  const testingNodes = ref<Set<string>>(new Set())
   const isTesting = computed(() => testingNodes.value.size > 0)
 
   const isNodeTesting = (nodeKey: string) => testingNodes.value.has(nodeKey)

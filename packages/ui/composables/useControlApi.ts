@@ -283,6 +283,11 @@ export function useControlApi() {
     // as text — not JSON. Missing file resolves to ''.
     getRuntimeConfig: () => client.get('config/runtime').text(),
 
+    // Active profile SOURCE (GET /config): the last-applied profile yaml without
+    // the supervisor-injected runtime keys — the right baseline to diff the
+    // panel draft against. Resolves to '' when no profile is active.
+    getActiveConfig: () => client.get('config').text(),
+
     // Config sections (capability-gated 'config-sections'). GET reads ONE parsed
     // top-level key of the active profile (e.g. rules, dns, sniffer) — resolves
     // to null when absent / no active profile. PUT { key, value } replaces that

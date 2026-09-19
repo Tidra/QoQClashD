@@ -4,10 +4,34 @@
 import { useControlApi } from '@/composables/useControlApi'
 import { composeConfigYaml } from '@/helper/composeConfig'
 import { useStorage } from '@/helper/storage'
+import { computed } from 'vue'
 
 const PANEL_PROFILE_NAME = '面板配置'
 
 const panelProfileId = useStorage<string>('config/panel-profile-id', '')
+
+// djb2：只为比较「草稿组合结果是否变过」，不需要密码学强度
+const hashYaml = (yaml: string) => {
+  let h = 5381
+  for (let i = 0; i < yaml.length; i++) h = ((h << 5) + h + yaml.charCodeAt(i)) >>> 0
+  return String(h)
+}
+
+const appliedConfigHash = useStorage<string>('config/applied-config-hash', '')
+
+// 草稿组合结果 vs 上次成功应用的结果：不一致 = 有改动还没下发内核。
+// 组合失败（数据不完整）时不参与比较，避免误报。
+const draftConfigHash = computed(() => {
+  try {
+    return hashYaml(composeConfigYaml())
+  } catch {
+    return ''
+  }
+})
+
+export const pendingConfigChanges = computed(
+  () => draftConfigHash.value !== '' && draftConfigHash.value !== appliedConfigHash.value,
+)
 
 export const applyComposedConfig = async (): Promise<void> => {
   const api = useControlApi()
@@ -27,4 +51,5 @@ export const applyComposedConfig = async (): Promise<void> => {
   }
   panelProfileId.value = id
   await api.activateProfile(id)
+  appliedConfigHash.value = hashYaml(content)
 }
