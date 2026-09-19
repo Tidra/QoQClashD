@@ -1,7 +1,7 @@
 import { useStorage } from '@/helper/storage'
+import { removeProxyGroupMembers, renameProxyGroupMember } from '@/store/proxyGroups'
 import { v4 as uuid } from 'uuid'
 import { computed } from 'vue'
-import { removeProxyGroupMembers, renameProxyGroupMember } from '@/store/proxyGroups'
 
 export interface CustomNode {
   id: string
@@ -11,7 +11,11 @@ export interface CustomNode {
   port: number
   cipher?: string
   password?: string
+  /** vmess 专用：修改 ID，内核字段 alter-id，缺省 0 */
+  alterId?: number
   sni?: string
+  /** 显式启用 TLS（部分订阅 tls: true 但不带 sni） */
+  tls?: boolean
   fingerprint?: string
   skipCertVerification?: boolean
   alpn?: string[]

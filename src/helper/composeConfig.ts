@@ -28,21 +28,33 @@ const nodeToProxy = (node: CustomNode): Record<string, unknown> => {
     // 面板表单里 password 是通用密钥字段：vmess/vless 对应 uuid。
     proxy[node.type === 'vmess' || node.type === 'vless' ? 'uuid' : 'password'] = node.password
   }
+  // mihomo 的 vmess 字段名是 alterId（非 alter-id），且与 uuid 同为必填
+  if (node.type === 'vmess') proxy.alterId = String(node.alterId ?? 0)
   if (node.tfo) proxy.tfo = true
   if (node.fingerprint) proxy['client-fingerprint'] = node.fingerprint
-  if (node.sni || node.skipCertVerification || node.alpn?.length) {
-    proxy.tls = {
-      enabled: true,
-      ...(node.sni ? { servername: node.sni } : {}),
-      ...(node.skipCertVerification ? { 'skip-cert-verify': true } : {}),
-      ...(node.alpn?.length ? { alpn: node.alpn } : {}),
-    }
-  }
+  // mihomo 对 vmess/vless 的 tls 只接受布尔；servername/skip-cert-verify/alpn
+  // 一律走代理顶层字段，各协议通用。
+  const tlsTypes = new Set(['vmess', 'vless', 'trojan', 'grpc'])
+  const tlsEnabled =
+    node.tls || !!node.sni || node.skipCertVerification === true || !!node.alpn?.length
+  if (tlsEnabled && tlsTypes.has(node.type)) proxy.tls = true
+  if (node.sni) proxy.sni = node.sni
+  if (node.skipCertVerification) proxy['skip-cert-verify'] = true
+  if (node.alpn?.length) proxy.alpn = node.alpn
   if (node.wsPath) {
     proxy.network = 'ws'
+    // mihomo 的 ws-opts.headers 只接受 string→string；订阅里同一头可能带多个值，取第一个
+    const headers = node.wsHeaders
+      ? Object.fromEntries(
+          Object.entries(node.wsHeaders).map(([k, v]) => [
+            k,
+            Array.isArray(v) ? String(v[0] ?? '') : String(v),
+          ]),
+        )
+      : undefined
     proxy['ws-opts'] = {
       path: node.wsPath,
-      ...(node.wsHeaders ? { headers: node.wsHeaders } : {}),
+      ...(headers && Object.keys(headers).length ? { headers } : {}),
     }
   } else if (node.grpcServiceName) {
     proxy.network = 'grpc'
@@ -147,7 +159,13 @@ export const composeConfigYaml = (): string => {
   const groups = proxyGroups.value
   if (groups.length) config['proxy-groups'] = groups.map((group) => groupToEntry(group, nodeNames))
 
-  const rules = routingRules.value.filter((rule) => rule.enabled).map(ruleToString)
+  const rules = routingRules.value
+    .filter((rule) => rule.enabled)
+    .map((rule) =>
+      // mihomo 的具名子规则调度语法是 `SUB-RULE,(内联条件),组名`，组内每条规则自带出站；
+      // 面板草稿把组名存进 payload、出站存进 target，这里改写为恒真条件并丢弃草稿 target。
+      rule.type === 'SUB-RULE' ? `SUB-RULE,(SRC-PORT,0-65535),${rule.payload}` : ruleToString(rule),
+    )
   if (!rules.some((line) => line.startsWith('MATCH'))) {
     rules.push(`MATCH,${ALL_NODES_GROUP_NAME}`)
   }

@@ -187,14 +187,17 @@ const getNameForNotification = (name: string, url: string) => {
   return name
 }
 
+// 返回测得的延迟毫秒数；失败返回 null。内核的手动 /delay 接口不会写入
+// 节点 history，调用方要用返回值自己刷新展示。
 export const proxyLatencyTest = async (
   proxyName: string,
   url = speedtestUrlWithDefault.value,
   timeout = speedtestTimeout.value,
-) => {
+): Promise<number | null> => {
   // 测速失败就是「这个节点不通」,用统一的 testFailedTip 说明,比抛出 HTTP 报文有用。
   try {
-    await latencyTestForSingle(proxyName, url, timeout)
+    const { data } = await latencyTestForSingle(proxyName, url, timeout)
+    return data.delay
   } catch {
     showNotification({
       content: 'testFailedTip',
@@ -203,6 +206,7 @@ export const proxyLatencyTest = async (
       },
       type: 'alert-error',
     })
+    return null
   } finally {
     await fetchProxies()
   }

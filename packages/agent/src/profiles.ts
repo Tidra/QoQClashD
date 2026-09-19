@@ -283,6 +283,11 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
       return meta
     },
 
+    async fetchContent(url) {
+      const { content } = await fetchSubscription(url, 'clash.meta')
+      return content
+    },
+
     async getActiveId() {
       return (await readState()).activeId
     },

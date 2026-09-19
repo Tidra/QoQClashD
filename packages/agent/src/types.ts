@@ -156,6 +156,9 @@ export interface ProfileStore {
   duplicate: (id: string, name?: string) => Promise<ProfileMeta>
   importFromUrl: (url: string, name?: string) => Promise<ProfileMeta> // UA 'clash.meta'
   refresh: (id: string) => Promise<ProfileMeta> // re-fetch a remote profile in place
+  // Fetch a subscription URL server-side (browser-direct fetch is CORS-blocked)
+  // and return the raw content without persisting anything.
+  fetchContent: (url: string) => Promise<string>
   getActiveId: () => Promise<string | undefined>
   setActive: (id: string) => Promise<void> // validate + write activeConfigPath
   // Point the store at a new active-config file (config dir relocated at

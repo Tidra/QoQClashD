@@ -1,5 +1,8 @@
 <template>
-  <div class="flex h-full min-w-0 w-full flex-1 flex-col overflow-auto" :style="padding">
+  <div
+    class="flex h-full w-full min-w-0 flex-1 flex-col overflow-auto"
+    :style="padding"
+  >
     <NodePageHeader>
       <template #search>
         <TextInput
@@ -18,33 +21,85 @@
         />
       </template>
       <template v-if="props.view === 'groups'">
-        <button type="button" class="btn btn-circle btn-sm" :title="$t('displaySettings')" @click="groupDisplaySettingsOpen = true">
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :title="$t('displaySettings')"
+          @click="groupDisplaySettingsOpen = true"
+        >
           <WrenchScrewdriverIcon class="h-4 w-4" />
         </button>
-        <button type="button" class="btn btn-circle btn-sm" :title="groupViewMode === 'card' ? $t('tableMode') : $t('cardMode')" @click="groupViewMode = groupViewMode === 'card' ? 'table' : 'card'">
-          <TableCellsIcon v-if="groupViewMode === 'card'" class="h-4 w-4" />
-          <Squares2X2Icon v-else class="h-4 w-4" />
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :title="groupViewMode === 'card' ? $t('tableMode') : $t('cardMode')"
+          @click="groupViewMode = groupViewMode === 'card' ? 'table' : 'card'"
+        >
+          <TableCellsIcon
+            v-if="groupViewMode === 'card'"
+            class="h-4 w-4"
+          />
+          <Squares2X2Icon
+            v-else
+            class="h-4 w-4"
+          />
         </button>
-        <button type="button" class="btn btn-circle btn-sm" :disabled="isTesting || !visibleRealGroups.length" :title="$t('nodeTestAll')" @click="testAllGroupNodes">
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :disabled="isTesting || !visibleRealGroups.length"
+          :title="$t('nodeTestAll')"
+          @click="testAllGroupNodes"
+        >
           <BoltIcon class="h-4 w-4" />
         </button>
-        <button type="button" class="btn btn-primary btn-sm" @click="openCreateGroup">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          @click="openCreateGroup"
+        >
           <PlusIcon class="h-4 w-4" />
           {{ $t('proxyGroupEditorAddGroup') }}
         </button>
       </template>
       <template v-else>
-        <button type="button" class="btn btn-circle btn-sm" :title="$t('displaySettings')" @click="nodeDisplaySettingsOpen = true">
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :title="$t('displaySettings')"
+          @click="nodeDisplaySettingsOpen = true"
+        >
           <WrenchScrewdriverIcon class="h-4 w-4" />
         </button>
-        <button type="button" class="btn btn-circle btn-sm" :title="nodeViewMode === 'card' ? $t('tableMode') : $t('cardMode')" @click="nodeViewMode = nodeViewMode === 'card' ? 'table' : 'card'">
-          <TableCellsIcon v-if="nodeViewMode === 'card'" class="h-4 w-4" />
-          <Squares2X2Icon v-else class="h-4 w-4" />
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :title="nodeViewMode === 'card' ? $t('tableMode') : $t('cardMode')"
+          @click="nodeViewMode = nodeViewMode === 'card' ? 'table' : 'card'"
+        >
+          <TableCellsIcon
+            v-if="nodeViewMode === 'card'"
+            class="h-4 w-4"
+          />
+          <Squares2X2Icon
+            v-else
+            class="h-4 w-4"
+          />
         </button>
-        <button type="button" class="btn btn-circle btn-sm" :disabled="isTesting || !filteredNodes.length" :title="$t('nodeTestAll')" @click="testAllStandaloneNodes">
+        <button
+          type="button"
+          class="btn btn-circle btn-sm"
+          :disabled="isTesting || !filteredNodes.length"
+          :title="$t('nodeTestAll')"
+          @click="testAllStandaloneNodes"
+        >
           <BoltIcon class="h-4 w-4" />
         </button>
-        <button type="button" class="btn btn-primary btn-sm" @click="openCreateNodeFromHeader">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          @click="openCreateNodeFromHeader"
+        >
           <PlusIcon class="h-4 w-4" />
           <span class="hidden sm:inline">{{ $t('nodePoolAddNode') }}</span>
         </button>
@@ -52,242 +107,589 @@
     </NodePageHeader>
     <div
       class="base-container m-3 min-h-0 flex-1 overflow-auto backdrop-blur-none!"
-      :class="((props.view === 'nodes' ? nodeViewMode : groupViewMode) === 'card') && 'p-3 md:p-4'"
+      :class="(props.view === 'nodes' ? nodeViewMode : groupViewMode) === 'card' && 'p-3 md:p-4'"
     >
       <template v-if="props.view === 'nodes'">
-        <div v-if="nodePoolsLoading" class="flex h-full items-center justify-center text-base-content/50">
+        <div
+          v-if="nodePoolsLoading"
+          class="text-base-content/50 flex h-full items-center justify-center"
+        >
           <span class="loading loading-spinner loading-lg"></span>
         </div>
-        <div v-else-if="!allNodes.length" class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center">
+        <div
+          v-else-if="!allNodes.length"
+          class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center"
+        >
           <div class="text-base-content/60 mb-2 text-sm">{{ $t('nodePoolEmpty') }}</div>
-          <button type="button" class="btn btn-primary btn-sm" @click="openCreateNodeFromHeader">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            @click="openCreateNodeFromHeader"
+          >
             <PlusIcon class="h-4 w-4" /> {{ $t('nodePoolAddNode') }}
           </button>
         </div>
-        <div v-else-if="nodeViewMode === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-          <div v-for="node in filteredNodes" :key="node.id" class="bg-base-200 hover:bg-base-300/50 relative flex min-w-0 flex-col items-start gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm">
-            <div class="flex w-full min-w-0 items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="truncate font-medium">{{ node.name }}</div>
-                <div class="text-base-content/60 mt-1 truncate text-xs">{{ node.type }} · {{ node.server }}:{{ node.port }}</div>
-              </div>
-            </div>
-            <div class="flex w-full items-center justify-between gap-2">
-              <div class="relative z-10 flex shrink-0 gap-0.5">
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <span v-if="latencyMap[node.name] !== undefined" class="text-base-content/60 text-[10px]">{{ latencyMap[node.name] ?? '—' }}ms</span>
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isTesting" :title="$t('nodeTestLatency')" @click.stop="testNode(node.name)">
-                  <BoltIcon class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
+        <template v-else>
+          <!-- 批量操作条：勾选节点后出现 -->
+          <div
+            v-if="selectedNodeIds.size"
+            class="bg-base-100/70 border-base-300/60 mb-2 flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+          >
+            <span class="text-base-content/70">{{
+              $t('nodeSelectedCount', { count: selectedNodeIds.size })
+            }}</span>
+            <button
+              type="button"
+              class="btn btn-error btn-sm"
+              @click="bulkDeleteSelectedNodes"
+            >
+              <TrashIcon class="h-3.5 w-3.5" />
+              {{ $t('nodeBulkDelete') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="selectedNodeIds = new Set()"
+            >
+              {{ $t('nodeClearSelection') }}
+            </button>
           </div>
-        </div>
-        <div v-else class="table-glass min-h-full min-w-min pb-6">
-            <table class="table table-sm">
-            <thead class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!">
-              <tr>
-                <th class="min-w-28">{{ $t('nodeName') }}</th>
-                <th v-if="nodeTableColumns.includes('type')" class="w-20 whitespace-nowrap">{{ $t('nodeType') }}</th>
-                <th v-if="nodeTableColumns.includes('server')" class="min-w-32">{{ $t('nodeServer') }}</th>
-                <th v-if="nodeTableColumns.includes('port')" class="w-16 whitespace-nowrap">{{ $t('nodePort') }}</th>
-                <th v-if="nodeTableColumns.includes('cipher')" class="w-28 whitespace-nowrap">{{ $t('nodeCipher') }}</th>
-                <th v-if="nodeTableColumns.includes('sni')" class="min-w-28">{{ $t('nodeSni') }}</th>
-                <th v-if="nodeTableColumns.includes('latency')" class="w-20 whitespace-nowrap">{{ $t('nodeLatency') }}</th>
-                <th class="sticky right-0 z-40 bg-base-100 text-right w-20 whitespace-nowrap">{{ $t('actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="!filteredNodes.length">
-                <td :colspan="nodeTableColumns.length + 2" class="text-base-content/50 h-90">
-                  <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                    <BoltIcon class="h-10 w-10 opacity-60" />
-                    <div class="text-base">{{ $t('nodePoolEmpty') }}</div>
+          <div
+            v-if="nodeViewMode === 'card'"
+            class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2"
+          >
+            <div
+              v-for="node in filteredNodes"
+              :key="node.id"
+              class="bg-base-200 hover:bg-base-300/50 relative flex min-w-0 flex-col items-start gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm"
+              :class="selectedNodeIds.has(node.id) && 'ring-primary/60 ring-1'"
+            >
+              <div class="flex w-full min-w-0 items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate font-medium">{{ node.name }}</div>
+                  <div class="text-base-content/60 mt-1 truncate text-xs">
+                    {{ node.type }} · {{ node.server }}:{{ node.port }}
                   </div>
-                </td>
-              </tr>
-              <tr v-for="(node, nodeIndex) in filteredNodes" :key="node.id" class="hover group cursor-pointer" :class="nodeIndex % 2 === 0 && 'table-row-stripe'" @click="editStandaloneNode(node)">
-                <td class="max-w-44 truncate" :title="node.name">{{ node.name }}</td>
-                <td v-if="nodeTableColumns.includes('type')" class="whitespace-nowrap">{{ node.type }}</td>
-                <td v-if="nodeTableColumns.includes('server')" class="max-w-40 truncate" :title="node.server">{{ node.server }}</td>
-                <td v-if="nodeTableColumns.includes('port')" class="whitespace-nowrap">{{ node.port }}</td>
-                <td v-if="nodeTableColumns.includes('cipher')" class="max-w-28 truncate">{{ node.cipher || '—' }}</td>
-                <td v-if="nodeTableColumns.includes('sni')" class="max-w-40 truncate" :title="node.sni">{{ node.sni || '—' }}</td>
-                <td v-if="nodeTableColumns.includes('latency')" class="whitespace-nowrap">{{ latencyMap[node.name] ?? '—' }}<span v-if="latencyMap[node.name] !== undefined">ms</span></td>
-                <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap" @click.stop>
-                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :title="$t('edit')" @click="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
-                  <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :title="$t('delete')" @click="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
-                </td>
-              </tr>
-            </tbody>
-            </table>
-        </div>
-      </template>
-      <template v-else>
-      <!-- 空状态 -->
-      <div
-        v-if="!realGroups.length"
-        class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center"
-      >
-        <div class="text-base-content/60 mb-2 text-sm">{{ $t('proxyGroupEditorNoGroups') }}</div>
-        <button type="button" class="btn btn-primary btn-sm" @click="openCreateGroup">
-          <PlusIcon class="h-4 w-4" />
-          {{ $t('proxyGroupEditorAddGroup') }}
-        </button>
-      </div>
-
-      <!-- 代理组卡片 -->
-      <div v-else-if="groupViewMode === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
-        <div
-          v-for="group in visibleRealGroups"
-          :key="group.name"
-          class="bg-base-200 hover:bg-base-300/50 flex flex-col gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
-        >
-          <div class="flex min-w-0 items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="truncate font-medium">{{ group.name }}</span>
-                <span class="badge badge-info shrink-0 text-[10px]">{{ groupTypeLabel(group.type) }}</span>
+                </div>
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-xs mt-0.5 shrink-0"
+                  :checked="selectedNodeIds.has(node.id)"
+                  @change="toggleNodeSelection(node.id)"
+                />
               </div>
-              <div class="text-base-content/60 mt-1 truncate text-xs">
-                {{ groupMemberTotal(group) }} {{ $t('proxyGroupEditorMembers') }}
-                <template v-if="isSelectableGroup(group)">
-                  · {{ $t('proxyGroupEditorCurrentSelected') }}:
-                  <span :class="group['default-selected'] ? 'text-base-content' : 'text-base-content/40'">
-                    {{ group['default-selected'] || '—' }}
-                  </span>
-                </template>
+              <div class="flex w-full items-center justify-between gap-2">
+                <div class="relative z-10 flex shrink-0 gap-0.5">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                    @click.stop="editStandaloneNode(node)"
+                  >
+                    <PencilIcon class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
+                    @click.stop="removeStandaloneNode(node)"
+                  >
+                    <TrashIcon class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <span
+                    v-if="latencyMap[node.name] !== undefined"
+                    class="text-[10px]"
+                    :class="latencyDisplayClass(node.name)"
+                    >{{ latencyDisplayText(node.name) }}</span
+                  >
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                    :disabled="isNodeTesting(node.name)"
+                    :title="$t('nodeTestLatency')"
+                    @click.stop="testNode(node.name)"
+                  >
+                    <span
+                      v-if="isNodeTesting(node.name)"
+                      class="loading loading-spinner loading-xs"
+                    ></span>
+                    <BoltIcon
+                      v-else
+                      class="h-3.5 w-3.5"
+                    />
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="relative z-10 flex shrink-0 gap-0.5">
-              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isTesting || !groupNodeMembers(group).length" :title="$t('nodeTestAll')" @click.stop="testGroupNodes(group)"><BoltIcon class="h-3.5 w-3.5" /></button>
-              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click.stop="openEditGroup(group)"><PencilIcon class="h-3.5 w-3.5" /></button>
-              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :disabled="isProtectedGroup(group.name)" :title="$t('proxyGroupEditorDeleteGroup')" @click.stop="deleteRealGroup(group)"><TrashIcon class="h-3.5 w-3.5" /></button>
-            </div>
-          </div>
-
-          <TextInput
-            v-model="groupMemberSearchMap[group.name]"
-            :placeholder="$t('proxyGroupEditorMemberFilter')"
-            clearable
-            class="input-sm min-w-0"
-          />
-
-          <div v-if="!filterGroupMembers(group).length" class="text-base-content/60 py-1 text-xs">
-            {{ $t('proxyGroupEditorNoMembers') }}
           </div>
           <div
             v-else
-            :ref="(el) => measureGroupMembers(group.name, el)"
-            class="flex flex-wrap content-start gap-1"
-            :class="!groupExpandedMap[group.name] && 'max-h-13 overflow-hidden'"
+            class="table-glass min-h-full min-w-min pb-6"
           >
-            <div
-              v-for="member in filterGroupMembers(group)"
-              :key="member"
-              class="flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors"
-              :class="memberChipClass(group, member)"
-              :title="memberTitle(group, member)"
-            >
-              <button
-                type="button"
-                class="flex min-w-0 items-center gap-1"
-                :disabled="!isSelectableGroup(group)"
-                @click="selectGroupMember(group, member)"
+            <table class="table-sm table">
+              <thead
+                class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!"
               >
-                <span
-                  class="h-1.5 w-1.5 shrink-0 rounded-full"
-                  :class="memberKind(member) === 'group' ? 'bg-warning' : memberKind(member) === 'node' ? 'bg-info' : 'bg-error'"
-                ></span>
-                <span class="min-w-0 truncate" :class="{ 'line-through': memberKind(member) === 'missing' }">{{ member }}</span>
-                <CheckIcon v-if="group['default-selected'] === member" class="h-3 w-3 shrink-0" />
-              </button>
-              <template v-if="memberKind(member) === 'node'">
-                <span v-if="latencyMap[member] !== undefined" class="shrink-0 text-[10px] opacity-70">{{ latencyMap[member] ?? '—' }}ms</span>
-                <button
-                  type="button"
-                  class="shrink-0 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30"
-                  :disabled="isTesting"
-                  :title="$t('nodeTestLatency')"
-                  @click.stop="testNode(member)"
+                <tr>
+                  <th class="w-8">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-xs"
+                      :checked="allFilteredSelected"
+                      :indeterminate="someFilteredSelected && !allFilteredSelected"
+                      :title="$t('nodeSelectAll')"
+                      @change="toggleSelectAllFiltered"
+                    />
+                  </th>
+                  <th class="min-w-28">{{ $t('nodeName') }}</th>
+                  <th
+                    v-if="nodeTableColumns.includes('type')"
+                    class="w-20 whitespace-nowrap"
+                  >
+                    {{ $t('nodeType') }}
+                  </th>
+                  <th
+                    v-if="nodeTableColumns.includes('server')"
+                    class="min-w-32"
+                  >
+                    {{ $t('nodeServer') }}
+                  </th>
+                  <th
+                    v-if="nodeTableColumns.includes('port')"
+                    class="w-16 whitespace-nowrap"
+                  >
+                    {{ $t('nodePort') }}
+                  </th>
+                  <th
+                    v-if="nodeTableColumns.includes('cipher')"
+                    class="w-28 whitespace-nowrap"
+                  >
+                    {{ $t('nodeCipher') }}
+                  </th>
+                  <th
+                    v-if="nodeTableColumns.includes('sni')"
+                    class="min-w-28"
+                  >
+                    {{ $t('nodeSni') }}
+                  </th>
+                  <th
+                    v-if="nodeTableColumns.includes('latency')"
+                    class="w-20 whitespace-nowrap"
+                  >
+                    {{ $t('nodeLatency') }}
+                  </th>
+                  <th class="bg-base-100 sticky right-0 z-40 w-28 text-right whitespace-nowrap">
+                    {{ $t('actions') }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!filteredNodes.length">
+                  <td
+                    :colspan="nodeTableColumns.length + 3"
+                    class="text-base-content/50 h-90"
+                  >
+                    <div
+                      class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
+                    >
+                      <BoltIcon class="h-10 w-10 opacity-60" />
+                      <div class="text-base">{{ $t('nodePoolEmpty') }}</div>
+                    </div>
+                  </td>
+                </tr>
+                <tr
+                  v-for="(node, nodeIndex) in filteredNodes"
+                  :key="node.id"
+                  class="hover group cursor-pointer"
+                  :class="nodeIndex % 2 === 0 && 'table-row-stripe'"
+                  @click="editStandaloneNode(node)"
                 >
-                  <BoltIcon class="h-3 w-3" />
-                </button>
-              </template>
-            </div>
+                  <td @click.stop>
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-xs"
+                      :checked="selectedNodeIds.has(node.id)"
+                      @change="toggleNodeSelection(node.id)"
+                    />
+                  </td>
+                  <td
+                    class="max-w-44 truncate"
+                    :title="node.name"
+                  >
+                    {{ node.name }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('type')"
+                    class="whitespace-nowrap"
+                  >
+                    {{ node.type }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('server')"
+                    class="max-w-40 truncate"
+                    :title="node.server"
+                  >
+                    {{ node.server }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('port')"
+                    class="whitespace-nowrap"
+                  >
+                    {{ node.port }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('cipher')"
+                    class="max-w-28 truncate"
+                  >
+                    {{ node.cipher || '—' }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('sni')"
+                    class="max-w-40 truncate"
+                    :title="node.sni"
+                  >
+                    {{ node.sni || '—' }}
+                  </td>
+                  <td
+                    v-if="nodeTableColumns.includes('latency')"
+                    class="whitespace-nowrap"
+                    :class="latencyDisplayClass(node.name)"
+                  >
+                    <span
+                      v-if="isNodeTesting(node.name)"
+                      class="loading loading-spinner loading-xs"
+                    ></span>
+                    <template v-else>{{ latencyDisplayText(node.name) }}</template>
+                  </td>
+                  <td
+                    class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap"
+                    @click.stop
+                  >
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                      :disabled="isNodeTesting(node.name)"
+                      :title="$t('nodeTestLatency')"
+                      @click="testNode(node.name)"
+                    >
+                      <span
+                        v-if="isNodeTesting(node.name)"
+                        class="loading loading-spinner loading-xs"
+                      ></span>
+                      <BoltIcon
+                        v-else
+                        class="h-3.5 w-3.5"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                      :title="$t('edit')"
+                      @click="editStandaloneNode(node)"
+                    >
+                      <PencilIcon class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
+                      :title="$t('delete')"
+                      @click="removeStandaloneNode(node)"
+                    >
+                      <TrashIcon class="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+        </template>
+      </template>
+      <template v-else>
+        <!-- 空状态 -->
+        <div
+          v-if="!realGroups.length"
+          class="bg-base-100 border-base-300/60 rounded-xl border p-8 text-center"
+        >
+          <div class="text-base-content/60 mb-2 text-sm">{{ $t('proxyGroupEditorNoGroups') }}</div>
           <button
-            v-if="groupExpandedMap[group.name] || groupMembersOverflowMap[group.name]"
             type="button"
-            class="btn btn-ghost btn-xs self-start text-xs"
-            @click.stop="groupExpandedMap[group.name] = !groupExpandedMap[group.name]"
+            class="btn btn-primary btn-sm"
+            @click="openCreateGroup"
           >
-            {{ groupExpandedMap[group.name]
-              ? $t('proxyGroupEditorShowLess')
-              : $t('proxyGroupEditorShowAll', { count: filterGroupMembers(group).length }) }}
+            <PlusIcon class="h-4 w-4" />
+            {{ $t('proxyGroupEditorAddGroup') }}
           </button>
         </div>
-      </div>
 
-      <!-- 代理组表格 -->
-      <div v-else class="table-glass min-h-full min-w-min pb-6">
-        <table class="table table-sm">
-          <thead class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!">
-            <tr>
-              <th class="min-w-32">{{ $t('proxyGroupEditorGroup') }}</th>
-              <th v-if="groupTableColumns.includes('type')" class="w-24 whitespace-nowrap">{{ $t('proxyGroupEditorGroupType') }}</th>
-              <th v-if="groupTableColumns.includes('members')" class="w-20 whitespace-nowrap">{{ $t('proxyGroupEditorMembers') }}</th>
-              <th v-if="groupTableColumns.includes('currentSelected')" class="w-44 whitespace-nowrap">{{ $t('proxyGroupEditorCurrentSelected') }}</th>
-              <th class="sticky right-0 z-40 bg-base-100 text-right w-24 whitespace-nowrap">{{ $t('actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!visibleRealGroups.length">
-              <td :colspan="groupTableColumns.length + 2" class="text-base-content/50 h-90">
-                <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                  <BoltIcon class="h-10 w-10 opacity-60" />
-                  <div class="text-base">{{ $t('proxyGroupEditorNoGroups') }}</div>
+        <!-- 代理组卡片 -->
+        <div
+          v-else-if="groupViewMode === 'card'"
+          class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2"
+        >
+          <div
+            v-for="group in visibleRealGroups"
+            :key="group.name"
+            class="bg-base-200 hover:bg-base-300/50 flex flex-col gap-2 rounded-md p-2 transition-colors hover:shadow-sm"
+          >
+            <div class="flex min-w-0 items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="truncate font-medium">{{ group.name }}</span>
+                  <span class="badge badge-info shrink-0 text-[10px]">{{
+                    groupTypeLabel(group.type)
+                  }}</span>
                 </div>
-              </td>
-            </tr>
-            <tr v-for="(group, groupIndex) in visibleRealGroups" :key="group.name" class="hover group" :class="groupIndex % 2 === 0 && 'table-row-stripe'">
-              <td class="max-w-44 truncate" :title="group.name">{{ group.name }}</td>
-              <td v-if="groupTableColumns.includes('type')" class="whitespace-nowrap"><span class="badge badge-info badge-xs">{{ groupTypeLabel(group.type) }}</span></td>
-              <td v-if="groupTableColumns.includes('members')" class="whitespace-nowrap">{{ groupMemberTotal(group) }}</td>
-              <td v-if="groupTableColumns.includes('currentSelected')">
-                <SelectInput
-                  v-if="isSelectableGroup(group)"
-                  :model-value="group['default-selected'] ?? ''"
-                  :options="selectedMemberOptions(group)"
-                  searchable
-                  :search-placeholder="$t('proxyGroupEditorSearchOption')"
-                  :no-results-text="$t('proxyGroupEditorNoMatch')"
-                  class="select select-xs min-w-0 max-w-40"
-                  @change="setGroupSelected(group, $event)"
-                />
-                <span v-else class="text-base-content/40">—</span>
-              </td>
-              <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
-                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click="openEditGroup(group)">
+                <div class="text-base-content/60 mt-1 truncate text-xs">
+                  {{ groupMemberTotal(group) }} {{ $t('proxyGroupEditorMembers') }}
+                  <template v-if="isSelectableGroup(group)">
+                    · {{ $t('proxyGroupEditorCurrentSelected') }}:
+                    <span
+                      :class="
+                        group['default-selected'] ? 'text-base-content' : 'text-base-content/40'
+                      "
+                    >
+                      {{ group['default-selected'] || '—' }}
+                    </span>
+                  </template>
+                </div>
+              </div>
+              <div class="relative z-10 flex shrink-0 gap-0.5">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                  :disabled="isTesting || !groupNodeMembers(group).length"
+                  :title="$t('nodeTestAll')"
+                  @click.stop="testGroupNodes(group)"
+                >
+                  <BoltIcon class="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                  :disabled="isProtectedGroup(group.name)"
+                  :title="$t('edit')"
+                  @click.stop="openEditGroup(group)"
+                >
                   <PencilIcon class="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"
-                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error"
+                  class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
                   :disabled="isProtectedGroup(group.name)"
                   :title="$t('proxyGroupEditorDeleteGroup')"
-                  @click="deleteRealGroup(group)"
+                  @click.stop="deleteRealGroup(group)"
                 >
                   <TrashIcon class="h-3.5 w-3.5" />
                 </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </div>
+            </div>
+
+            <TextInput
+              v-model="groupMemberSearchMap[group.name]"
+              :placeholder="$t('proxyGroupEditorMemberFilter')"
+              clearable
+              class="input-sm min-w-0"
+            />
+
+            <div
+              v-if="!filterGroupMembers(group).length"
+              class="text-base-content/60 py-1 text-xs"
+            >
+              {{ $t('proxyGroupEditorNoMembers') }}
+            </div>
+            <div
+              v-else
+              :ref="(el) => measureGroupMembers(group.name, el)"
+              class="flex flex-wrap content-start gap-1"
+              :class="!groupExpandedMap[group.name] && 'max-h-13 overflow-hidden'"
+            >
+              <div
+                v-for="member in filterGroupMembers(group)"
+                :key="member"
+                class="flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors"
+                :class="memberChipClass(group, member)"
+                :title="memberTitle(group, member)"
+              >
+                <button
+                  type="button"
+                  class="flex min-w-0 items-center gap-1"
+                  :disabled="!isSelectableGroup(group)"
+                  @click="selectGroupMember(group, member)"
+                >
+                  <span
+                    class="h-1.5 w-1.5 shrink-0 rounded-full"
+                    :class="
+                      memberKind(member) === 'group'
+                        ? 'bg-warning'
+                        : memberKind(member) === 'node'
+                          ? 'bg-info'
+                          : 'bg-error'
+                    "
+                  ></span>
+                  <span
+                    class="min-w-0 truncate"
+                    :class="{ 'line-through': memberKind(member) === 'missing' }"
+                    >{{ member }}</span
+                  >
+                  <CheckIcon
+                    v-if="group['default-selected'] === member"
+                    class="h-3 w-3 shrink-0"
+                  />
+                </button>
+                <template v-if="memberKind(member) === 'node'">
+                  <span
+                    v-if="latencyMap[member] !== undefined"
+                    class="shrink-0 text-[10px] opacity-70"
+                    :class="latencyDisplayClass(member)"
+                    >{{ latencyDisplayText(member) }}</span
+                  >
+                  <button
+                    type="button"
+                    class="shrink-0 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30"
+                    :disabled="isNodeTesting(member)"
+                    :title="$t('nodeTestLatency')"
+                    @click.stop="testNode(member)"
+                  >
+                    <span
+                      v-if="isNodeTesting(member)"
+                      class="loading loading-spinner loading-xs"
+                    ></span>
+                    <BoltIcon
+                      v-else
+                      class="h-3 w-3"
+                    />
+                  </button>
+                </template>
+              </div>
+            </div>
+            <button
+              v-if="groupExpandedMap[group.name] || groupMembersOverflowMap[group.name]"
+              type="button"
+              class="btn btn-ghost btn-xs self-start text-xs"
+              @click.stop="groupExpandedMap[group.name] = !groupExpandedMap[group.name]"
+            >
+              {{
+                groupExpandedMap[group.name]
+                  ? $t('proxyGroupEditorShowLess')
+                  : $t('proxyGroupEditorShowAll', { count: filterGroupMembers(group).length })
+              }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 代理组表格 -->
+        <div
+          v-else
+          class="table-glass min-h-full min-w-min pb-6"
+        >
+          <table class="table-sm table">
+            <thead
+              class="bg-base-100 border-base-300/60 sticky top-0 z-30 border-b backdrop-blur-none!"
+            >
+              <tr>
+                <th class="min-w-32">{{ $t('proxyGroupEditorGroup') }}</th>
+                <th
+                  v-if="groupTableColumns.includes('type')"
+                  class="w-24 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorGroupType') }}
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('members')"
+                  class="w-20 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorMembers') }}
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('currentSelected')"
+                  class="w-44 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorCurrentSelected') }}
+                </th>
+                <th class="bg-base-100 sticky right-0 z-40 w-24 text-right whitespace-nowrap">
+                  {{ $t('actions') }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!visibleRealGroups.length">
+                <td
+                  :colspan="groupTableColumns.length + 2"
+                  class="text-base-content/50 h-90"
+                >
+                  <div
+                    class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
+                  >
+                    <BoltIcon class="h-10 w-10 opacity-60" />
+                    <div class="text-base">{{ $t('proxyGroupEditorNoGroups') }}</div>
+                  </div>
+                </td>
+              </tr>
+              <tr
+                v-for="(group, groupIndex) in visibleRealGroups"
+                :key="group.name"
+                class="hover group"
+                :class="groupIndex % 2 === 0 && 'table-row-stripe'"
+              >
+                <td
+                  class="max-w-44 truncate"
+                  :title="group.name"
+                >
+                  {{ group.name }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('type')"
+                  class="whitespace-nowrap"
+                >
+                  <span class="badge badge-info badge-xs">{{ groupTypeLabel(group.type) }}</span>
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('members')"
+                  class="whitespace-nowrap"
+                >
+                  {{ groupMemberTotal(group) }}
+                </td>
+                <td v-if="groupTableColumns.includes('currentSelected')">
+                  <SelectInput
+                    v-if="isSelectableGroup(group)"
+                    :model-value="group['default-selected'] ?? ''"
+                    :options="selectedMemberOptions(group)"
+                    searchable
+                    :search-placeholder="$t('proxyGroupEditorSearchOption')"
+                    :no-results-text="$t('proxyGroupEditorNoMatch')"
+                    class="select select-xs max-w-40 min-w-0"
+                    @change="setGroupSelected(group, $event)"
+                  />
+                  <span
+                    v-else
+                    class="text-base-content/40"
+                    >—</span
+                  >
+                </td>
+                <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                    :disabled="isProtectedGroup(group.name)"
+                    :title="$t('edit')"
+                    @click="openEditGroup(group)"
+                  >
+                    <PencilIcon class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
+                    :disabled="isProtectedGroup(group.name)"
+                    :title="$t('proxyGroupEditorDeleteGroup')"
+                    @click="deleteRealGroup(group)"
+                  >
+                    <TrashIcon class="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <!-- 代理组 编辑/新建 弹窗 -->
@@ -298,7 +700,11 @@
         @save="saveRealGroup"
       />
       <!-- 节点池 编辑/新建 弹窗（已移除，改用 ProxyGroupEditor） -->
-      <DialogWrapper v-model="nodeDisplaySettingsOpen" :title="$t('displaySettings')" box-class="max-w-lg">
+      <DialogWrapper
+        v-model="nodeDisplaySettingsOpen"
+        :title="$t('displaySettings')"
+        box-class="max-w-lg"
+      >
         <div class="flex flex-col gap-3 text-sm">
           <div class="settings-grid">
             <div class="setting-item">
@@ -329,16 +735,25 @@
                     :item-key="(id: string) => id"
                   >
                     <template #item="{ element }">
-                      <div class="btn btn-sm bg-base-100 flex-nowrap justify-between gap-1 shadow-sm" :title="getNodeColumnLabel(element)">
+                      <div
+                        class="btn btn-sm bg-base-100 flex-nowrap justify-between gap-1 shadow-sm"
+                        :title="getNodeColumnLabel(element)"
+                      >
                         <Bars2Icon class="h-4 w-4 shrink-0 cursor-move opacity-40" />
                         <span class="truncate">{{ getNodeColumnLabel(element) }}</span>
-                        <button class="opacity-50 transition-opacity hover:opacity-100" @click.stop="removeNodeColumn(element)">
+                        <button
+                          class="opacity-50 transition-opacity hover:opacity-100"
+                          @click.stop="removeNodeColumn(element)"
+                        >
                           <XMarkIcon class="h-4 w-4 shrink-0" />
                         </button>
                       </div>
                     </template>
                     <template #footer>
-                      <div v-if="!nodeTableColumns.length" class="text-base-content/40 flex h-16 items-center justify-center px-2 text-center text-xs">
+                      <div
+                        v-if="!nodeTableColumns.length"
+                        class="text-base-content/40 flex h-16 items-center justify-center px-2 text-center text-xs"
+                      >
                         {{ $t('dragOrClickToAdd') }}
                       </div>
                     </template>
@@ -358,7 +773,11 @@
                     :item-key="(id: string) => id"
                   >
                     <template #item="{ element }">
-                      <button class="btn btn-sm btn-ghost border-base-300/60 flex-nowrap justify-between gap-1" :title="getNodeColumnLabel(element)" @click="addNodeColumn(element)">
+                      <button
+                        class="btn btn-sm btn-ghost border-base-300/60 flex-nowrap justify-between gap-1"
+                        :title="getNodeColumnLabel(element)"
+                        @click="addNodeColumn(element)"
+                      >
                         <span class="truncate">{{ getNodeColumnLabel(element) }}</span>
                         <PlusIcon class="h-4 w-4 shrink-0 opacity-50" />
                       </button>
@@ -370,7 +789,11 @@
           </div>
         </div>
       </DialogWrapper>
-      <DialogWrapper v-model="groupDisplaySettingsOpen" :title="$t('displaySettings')" box-class="max-w-lg">
+      <DialogWrapper
+        v-model="groupDisplaySettingsOpen"
+        :title="$t('displaySettings')"
+        box-class="max-w-lg"
+      >
         <div class="flex flex-col gap-3 text-sm">
           <div class="settings-grid">
             <div class="setting-item">
@@ -401,16 +824,25 @@
                     :item-key="(id: string) => id"
                   >
                     <template #item="{ element }">
-                      <div class="btn btn-sm bg-base-100 flex-nowrap justify-between gap-1 shadow-sm" :title="getGroupColumnLabel(element)">
+                      <div
+                        class="btn btn-sm bg-base-100 flex-nowrap justify-between gap-1 shadow-sm"
+                        :title="getGroupColumnLabel(element)"
+                      >
                         <Bars2Icon class="h-4 w-4 shrink-0 cursor-move opacity-40" />
                         <span class="truncate">{{ getGroupColumnLabel(element) }}</span>
-                        <button class="opacity-50 transition-opacity hover:opacity-100" @click.stop="removeGroupColumn(element)">
+                        <button
+                          class="opacity-50 transition-opacity hover:opacity-100"
+                          @click.stop="removeGroupColumn(element)"
+                        >
                           <XMarkIcon class="h-4 w-4 shrink-0" />
                         </button>
                       </div>
                     </template>
                     <template #footer>
-                      <div v-if="!groupTableColumns.length" class="text-base-content/40 flex h-16 items-center justify-center px-2 text-center text-xs">
+                      <div
+                        v-if="!groupTableColumns.length"
+                        class="text-base-content/40 flex h-16 items-center justify-center px-2 text-center text-xs"
+                      >
                         {{ $t('dragOrClickToAdd') }}
                       </div>
                     </template>
@@ -430,7 +862,11 @@
                     :item-key="(id: string) => id"
                   >
                     <template #item="{ element }">
-                      <button class="btn btn-sm btn-ghost border-base-300/60 flex-nowrap justify-between gap-1" :title="getGroupColumnLabel(element)" @click="addGroupColumn(element)">
+                      <button
+                        class="btn btn-sm btn-ghost border-base-300/60 flex-nowrap justify-between gap-1"
+                        :title="getGroupColumnLabel(element)"
+                        @click="addGroupColumn(element)"
+                      >
                         <span class="truncate">{{ getGroupColumnLabel(element) }}</span>
                         <PlusIcon class="h-4 w-4 shrink-0 opacity-50" />
                       </button>
@@ -458,47 +894,118 @@
           />
         </template>
         <!-- 内容区随 DialogWrapper content-box 滚动（与节点/连接/日志配置弹窗一致） -->
-        <div v-if="nodeInputMode === 'yaml'" class="flex min-h-[420px] flex-col">
+        <div
+          v-if="nodeInputMode === 'yaml'"
+          class="flex min-h-[420px] flex-col"
+        >
           <textarea
             v-model="nodeYaml"
-            class="textarea textarea-bordered h-[420px] w-full resize-none border-base-300 bg-base-100 font-mono text-xs"
+            class="textarea textarea-bordered border-base-300 bg-base-100 h-[420px] w-full resize-none font-mono text-xs"
             spellcheck="false"
           ></textarea>
         </div>
-        <div v-else class="settings-grid node-form-grid">
+        <div
+          v-else
+          class="settings-grid node-form-grid"
+        >
           <div class="setting-item">
             <div class="setting-item-label">{{ $t('nodeName') }}</div>
-            <input v-model="nodeForm.name" type="text" class="input input-sm w-40" placeholder="1.2.3.4" />
+            <input
+              v-model="nodeForm.name"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="1.2.3.4"
+            />
           </div>
           <div class="setting-item">
             <div class="setting-item-label">{{ $t('nodeType') }}</div>
             <SelectInput
               v-model="nodeForm.type"
               class="select select-sm min-w-24"
-              :options="NODE_TYPES.map(t => ({ value: t, label: t }))"
+              :options="NODE_TYPES.map((t) => ({ value: t, label: t }))"
             />
           </div>
           <div class="setting-item">
             <div class="setting-item-label">{{ $t('nodeServer') }}</div>
-            <input v-model="nodeForm.server" type="text" class="input input-sm w-40" placeholder="1.2.3.4" />
+            <input
+              v-model="nodeForm.server"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="1.2.3.4"
+            />
           </div>
           <div class="setting-item">
             <div class="setting-item-label">{{ $t('nodePort') }}</div>
-            <input v-model.number="nodeForm.port" type="number" min="1" max="65535" class="input input-sm w-24" />
+            <input
+              v-model.number="nodeForm.port"
+              type="number"
+              min="1"
+              max="65535"
+              class="input input-sm w-24"
+            />
           </div>
-          <div v-if="hasNodeField('cipher')" class="setting-item">
+          <div
+            v-if="hasNodeField('cipher')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeCipher') }}</div>
-            <input v-model="nodeForm.cipher" type="text" class="input input-sm w-40" placeholder="chacha20-poly1305" />
+            <input
+              v-model="nodeForm.cipher"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="chacha20-poly1305"
+            />
           </div>
-          <div v-if="hasNodeField('password')" class="setting-item">
+          <div
+            v-if="hasNodeField('password')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodePassword') }}</div>
-            <input v-model="nodeForm.password" type="text" class="input input-sm w-40" />
+            <input
+              v-model="nodeForm.password"
+              type="text"
+              class="input input-sm w-40"
+            />
           </div>
-          <div v-if="hasNodeField('sni')" class="setting-item">
+          <div
+            v-if="hasNodeField('alterId')"
+            class="setting-item"
+          >
+            <div class="setting-item-label">{{ $t('nodeAlterId') }}</div>
+            <input
+              v-model.number="nodeForm.alterId"
+              type="number"
+              min="0"
+              class="input input-sm w-24"
+            />
+          </div>
+          <div
+            v-if="hasNodeField('sni')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeSni') }}</div>
-            <input v-model="nodeForm.sni" type="text" class="input input-sm w-40" />
+            <input
+              v-model="nodeForm.sni"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="example.com"
+            />
           </div>
-          <div v-if="hasNodeField('fingerprint')" class="setting-item">
+          <div
+            v-if="hasNodeField('tls')"
+            class="setting-item"
+          >
+            <div class="setting-item-label">{{ $t('nodeTlsEnabled') }}</div>
+            <input
+              v-model="nodeForm.tls"
+              type="checkbox"
+              class="toggle"
+            />
+          </div>
+          <div
+            v-if="hasNodeField('fingerprint')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeFingerprint') }}</div>
             <SelectInput
               v-model="nodeForm.fingerprint"
@@ -516,30 +1023,73 @@
               ]"
             />
           </div>
-          <div v-if="hasNodeField('wsPath')" class="setting-item">
+          <div
+            v-if="hasNodeField('wsPath')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeWsPath') }}</div>
-            <input v-model="nodeForm.wsPath" type="text" class="input input-sm w-40" placeholder="/ws" />
+            <input
+              v-model="nodeForm.wsPath"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="/ws"
+            />
           </div>
-          <div v-if="hasNodeField('grpcServiceName')" class="setting-item">
+          <div
+            v-if="hasNodeField('grpcServiceName')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeGrpcServiceName') }}</div>
-            <input v-model="nodeForm.grpcServiceName" type="text" class="input input-sm w-40" />
+            <input
+              v-model="nodeForm.grpcServiceName"
+              type="text"
+              class="input input-sm w-40"
+            />
           </div>
-          <div v-if="hasNodeField('alpn')" class="setting-item">
+          <div
+            v-if="hasNodeField('alpn')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeAlpn') }}</div>
-            <input v-model="nodeForm.alpnStr" type="text" class="input input-sm w-40" placeholder="h2,http/1.1" />
+            <input
+              v-model="nodeForm.alpnStr"
+              type="text"
+              class="input input-sm w-40"
+              placeholder="h2,http/1.1"
+            />
           </div>
-          <div v-if="hasNodeField('tfo')" class="setting-item">
+          <div
+            v-if="hasNodeField('tfo')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeTfo') }}</div>
-            <input v-model="nodeForm.tfo" type="checkbox" class="toggle" />
+            <input
+              v-model="nodeForm.tfo"
+              type="checkbox"
+              class="toggle"
+            />
           </div>
-          <div v-if="hasNodeField('skipCert')" class="setting-item">
+          <div
+            v-if="hasNodeField('skipCert')"
+            class="setting-item"
+          >
             <div class="setting-item-label">{{ $t('nodeSkipCert') }}</div>
-            <input v-model="nodeForm.skipCertVerification" type="checkbox" class="toggle" />
+            <input
+              v-model="nodeForm.skipCertVerification"
+              type="checkbox"
+              class="toggle"
+            />
           </div>
         </div>
         <!-- 操作行 -->
-        <div class="flex items-center justify-end gap-2 border-t border-base-300/60 p-4 pt-3">
-          <button type="button" class="btn btn-sm btn-ghost" @click="closeNodeDialog">{{ $t('cancel') }}</button>
+        <div class="border-base-300/60 flex items-center justify-end gap-2 border-t p-4 pt-3">
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost"
+            @click="closeNodeDialog"
+          >
+            {{ $t('cancel') }}
+          </button>
           <button
             type="button"
             class="btn btn-sm btn-primary"
@@ -573,12 +1123,25 @@ import {
   addNodePool,
   nodePools,
   removeNode,
+  removeNodes,
   updateNode,
   buildMergedNodeList,
 } from '@/store/nodePool'
 import type { CustomNode, NodePool } from '@/store/nodePool'
+import { getColorForLatency } from '@/helper'
 import { useLatency } from '@/composables/useLatency'
-import { Bars2Icon, BoltIcon, CheckIcon, PencilIcon, PlusIcon, Squares2X2Icon, TableCellsIcon, TrashIcon, WrenchScrewdriverIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import {
+  Bars2Icon,
+  BoltIcon,
+  CheckIcon,
+  PencilIcon,
+  PlusIcon,
+  Squares2X2Icon,
+  TableCellsIcon,
+  TrashIcon,
+  WrenchScrewdriverIcon,
+  XMarkIcon,
+} from '@heroicons/vue/24/outline'
 import Draggable from 'vuedraggable'
 import NodePageHeader from '@/components/proxies/NodePageHeader.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
@@ -590,23 +1153,59 @@ import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStorage } from '@vueuse/core'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import { isProtectedGroup, proxyGroups, removeProxyGroup, resolveGroupMembers, setProxyGroupDefaultSelected, upsertProxyGroup } from '@/store/proxyGroups'
+import {
+  isProtectedGroup,
+  proxyGroups,
+  removeProxyGroup,
+  resolveGroupMembers,
+  setProxyGroupDefaultSelected,
+  upsertProxyGroup,
+} from '@/store/proxyGroups'
 import type { ProxyGroupDraft, ProxyGroupMemberOption } from '@/types'
 
 const { t } = useI18n()
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
-const { latencyMap, isTesting, testNodeLatency } = useLatency()
+const { latencyMap, isTesting, isNodeTesting, testNodeLatency } = useLatency()
 
-const NODE_TYPES = [
-  'vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'ss', 'ssr',
-] as const
+const NODE_TYPES = ['vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'ss', 'ssr'] as const
 
 // 各协议在弹窗表单中显示的可选字段（核心字段 名称/类型/服务器/端口 恒显示）
-type NodeFieldKey = 'cipher' | 'password' | 'sni' | 'fingerprint' | 'wsPath' | 'grpcServiceName' | 'alpn' | 'tfo' | 'skipCert'
+type NodeFieldKey =
+  | 'cipher'
+  | 'password'
+  | 'alterId'
+  | 'sni'
+  | 'tls'
+  | 'fingerprint'
+  | 'wsPath'
+  | 'grpcServiceName'
+  | 'alpn'
+  | 'tfo'
+  | 'skipCert'
 const NODE_TYPE_FIELDS: Record<string, NodeFieldKey[]> = {
-  vmess: ['cipher', 'sni', 'fingerprint', 'wsPath', 'alpn', 'tfo', 'skipCert'],
-  vless: ['sni', 'fingerprint', 'wsPath', 'grpcServiceName', 'alpn', 'skipCert'],
-  trojan: ['password', 'sni', 'fingerprint', 'wsPath', 'grpcServiceName', 'alpn', 'skipCert'],
+  vmess: [
+    'cipher',
+    'password',
+    'alterId',
+    'sni',
+    'tls',
+    'fingerprint',
+    'wsPath',
+    'alpn',
+    'tfo',
+    'skipCert',
+  ],
+  vless: ['password', 'sni', 'tls', 'fingerprint', 'wsPath', 'grpcServiceName', 'alpn', 'skipCert'],
+  trojan: [
+    'password',
+    'sni',
+    'tls',
+    'fingerprint',
+    'wsPath',
+    'grpcServiceName',
+    'alpn',
+    'skipCert',
+  ],
   hysteria2: ['password', 'sni', 'alpn', 'skipCert'],
   shadowsocks: ['cipher', 'password'],
   ss: ['cipher', 'password'],
@@ -621,7 +1220,9 @@ const pruneNodeFormForType = () => {
   const f = nodeForm.value
   if (!allowed.includes('cipher')) f.cipher = ''
   if (!allowed.includes('password')) f.password = ''
+  if (!allowed.includes('alterId')) f.alterId = 0
   if (!allowed.includes('sni')) f.sni = ''
+  if (!allowed.includes('tls')) f.tls = false
   if (!allowed.includes('fingerprint')) f.fingerprint = ''
   if (!allowed.includes('wsPath')) f.wsPath = ''
   if (!allowed.includes('grpcServiceName')) f.grpcServiceName = ''
@@ -694,7 +1295,10 @@ const visibleRealGroups = computed(() => {
 // 每个组的成员过滤关键字(用 ref 对象避免直接 v-model 到 computed)
 const groupMemberSearchMap = reactive<Record<string, string>>({})
 const filterGroupMembers = (group: ProxyGroupDraft): string[] => {
-  const members = resolveGroupMembers(group, allNodes.value.map((node) => node.name))
+  const members = resolveGroupMembers(
+    group,
+    allNodes.value.map((node) => node.name),
+  )
   const keyword = (groupMemberSearchMap[group.name] || '').trim().toLowerCase()
   if (!keyword) return members
   return members.filter((m) => m.toLowerCase().includes(keyword))
@@ -764,7 +1368,9 @@ const selectGroupMember = (group: ProxyGroupDraft, member: string) => {
   const next = group['default-selected'] === member ? undefined : member
   setProxyGroupDefaultSelected(group.name, next)
   showNotification({
-    content: next ? t('proxyGroupEditorSelectedMember', { name: member }) : t('proxyGroupEditorDeselectedMember'),
+    content: next
+      ? t('proxyGroupEditorSelectedMember', { name: member })
+      : t('proxyGroupEditorDeselectedMember'),
     type: 'alert-success',
   })
 }
@@ -773,32 +1379,49 @@ const groupMemberTotal = (group: ProxyGroupDraft) =>
   resolveGroupMembers(group, [...nodeNameSet.value]).length
 const selectedMemberOptions = (group: ProxyGroupDraft) => [
   { value: '', label: '--' },
-  ...resolveGroupMembers(group, [...nodeNameSet.value]).map((name) => ({ value: name, label: name })),
+  ...resolveGroupMembers(group, [...nodeNameSet.value]).map((name) => ({
+    value: name,
+    label: name,
+  })),
 ]
 const setGroupSelected = (group: ProxyGroupDraft, member: string) => {
   if (member === (group['default-selected'] ?? '')) return
   setProxyGroupDefaultSelected(group.name, member || undefined)
   if (member) {
-    showNotification({ content: t('proxyGroupEditorSelectedMember', { name: member }), type: 'alert-success' })
+    showNotification({
+      content: t('proxyGroupEditorSelectedMember', { name: member }),
+      type: 'alert-success',
+    })
   }
 }
 const memberChipClass = (group: ProxyGroupDraft, member: string) => {
   if (memberKind(member) === 'missing') return 'bg-base-100/70 text-error cursor-not-allowed'
   if (!isSelectableGroup(group)) return 'bg-base-100/70'
-  if (group['default-selected'] === member) return 'bg-primary/15 text-primary ring-primary/40 ring-1 hover:bg-primary/25'
+  if (group['default-selected'] === member)
+    return 'bg-primary/15 text-primary ring-primary/40 ring-1 hover:bg-primary/25'
   return 'bg-base-100/70 hover:bg-base-100 cursor-pointer'
 }
 const memberTitle = (group: ProxyGroupDraft, member: string) => {
   const kind = memberKind(member)
-  const kindLabel = kind === 'group' ? t('memberKindGroup') : kind === 'node' ? t('memberKindNode') : t('memberKindMissing')
+  const kindLabel =
+    kind === 'group'
+      ? t('memberKindGroup')
+      : kind === 'node'
+        ? t('memberKindNode')
+        : t('memberKindMissing')
   if (kind === 'missing') return kindLabel
   if (isSelectableGroup(group)) {
-    return group['default-selected'] === member ? t('proxyGroupEditorClickToDeselect') : t('proxyGroupEditorClickToSelect')
+    return group['default-selected'] === member
+      ? t('proxyGroupEditorClickToDeselect')
+      : t('proxyGroupEditorClickToSelect')
   }
   return kindLabel
 }
 const groupMemberOptions = computed<ProxyGroupMemberOption[]>(() => {
-  const options: ProxyGroupMemberOption[] = [...nodeNameSet.value].map((name) => ({ name, kind: 'node' as const }))
+  const options: ProxyGroupMemberOption[] = [...nodeNameSet.value].map((name) => ({
+    name,
+    kind: 'node' as const,
+  }))
   for (const group of realGroups.value) {
     if (!nodeNameSet.value.has(group.name)) options.push({ name: group.name, kind: 'group' })
   }
@@ -810,7 +1433,14 @@ const allNodes = computed(() => buildMergedNodeList())
 const groupViewMode = useStorage<'card' | 'table'>('groupViewMode', 'card')
 const nodeDisplaySettingsOpen = ref(false)
 const groupDisplaySettingsOpen = ref(false)
-const nodeTableColumns = useStorage<string[]>('nodeTableColumns', ['type', 'server', 'port', 'cipher', 'sni', 'latency'])
+const nodeTableColumns = useStorage<string[]>('nodeTableColumns', [
+  'type',
+  'server',
+  'port',
+  'cipher',
+  'sni',
+  'latency',
+])
 const nodeTableColumnOptions = [
   { key: 'type', label: t('nodeType') },
   { key: 'server', label: t('nodeServer') },
@@ -820,14 +1450,21 @@ const nodeTableColumnOptions = [
   { key: 'latency', label: t('nodeLatency') },
 ]
 
-const groupTableColumns = useStorage<string[]>('groupTableColumns', ['type', 'members', 'currentSelected'])
+const groupTableColumns = useStorage<string[]>('groupTableColumns', [
+  'type',
+  'members',
+  'currentSelected',
+])
 const groupTableColumnOptions = [
   { key: 'type', label: t('proxyGroupEditorGroupType') },
   { key: 'members', label: t('proxyGroupEditorMembers') },
   { key: 'currentSelected', label: t('proxyGroupEditorCurrentSelected') },
 ]
 const restOfGroupColumns = computed({
-  get: () => groupTableColumnOptions.filter((opt) => !groupTableColumns.value.includes(opt.key)).map((opt) => opt.key),
+  get: () =>
+    groupTableColumnOptions
+      .filter((opt) => !groupTableColumns.value.includes(opt.key))
+      .map((opt) => opt.key),
   set: () => {},
 })
 const getGroupColumnLabel = (key: string) =>
@@ -843,11 +1480,13 @@ const addGroupColumn = (key: string) => {
 
 const restOfNodeColumns = computed({
   get() {
-    return nodeTableColumnOptions.filter((opt) => !nodeTableColumns.value.includes(opt.key)).map((opt) => opt.key)
+    return nodeTableColumnOptions
+      .filter((opt) => !nodeTableColumns.value.includes(opt.key))
+      .map((opt) => opt.key)
   },
   set() {
     // Draggable set is not strictly needed if we only drag from/to, but we define it to avoid warnings
-  }
+  },
 })
 
 const getNodeColumnLabel = (key: string) => {
@@ -871,13 +1510,69 @@ const filteredNodes = computed(() => {
   )
 })
 
-const openCreateNodeFromHeader = () => {
-  const pool = pools.value[0] || addNodePool({
-    name: t('nodePoolName'),
-    enabled: true,
-    dedupe: true,
-    nodes: [],
+// ── 批量选择 / 批量删除 ─────────────────────────────────────────
+const selectedNodeIds = ref<Set<string>>(new Set())
+const toggleNodeSelection = (id: string) => {
+  const next = new Set(selectedNodeIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedNodeIds.value = next
+}
+const allFilteredSelected = computed(
+  () =>
+    filteredNodes.value.length > 0 &&
+    filteredNodes.value.every((node) => selectedNodeIds.value.has(node.id)),
+)
+const someFilteredSelected = computed(() =>
+  filteredNodes.value.some((node) => selectedNodeIds.value.has(node.id)),
+)
+const toggleSelectAllFiltered = () => {
+  selectedNodeIds.value = allFilteredSelected.value
+    ? new Set()
+    : new Set(filteredNodes.value.map((node) => node.id))
+}
+const bulkDeleteSelectedNodes = async () => {
+  const count = selectedNodeIds.value.size
+  if (!count) return
+  const { showConfirmDialog } = await import('@/helper/confirmDialog')
+  const result = await showConfirmDialog({
+    message: t('nodeBulkDeleteConfirm', { count: String(count) }),
+    confirmButtonClass: 'btn-error',
   })
+  if (!result.confirmed) return
+  for (const pool of pools.value) {
+    const nodeIds = pool.nodes
+      .filter((node) => selectedNodeIds.value.has(node.id))
+      .map((node) => node.id)
+    if (nodeIds.length) removeNodes(pool.id, nodeIds)
+  }
+  selectedNodeIds.value = new Set()
+  showNotification({
+    content: 'nodesDeleteSuccess',
+    params: { count: String(count) },
+    type: 'alert-success',
+  })
+}
+
+// ── 延迟显示：null/0 显灰色 —，有值按设置的阈值配色 ──────────────
+const latencyDisplayText = (name: string) => {
+  const value = latencyMap.value[name]
+  return value ? `${value}ms` : '—'
+}
+const latencyDisplayClass = (name: string) => {
+  const value = latencyMap.value[name]
+  return value ? getColorForLatency(value) : 'text-base-content/60'
+}
+
+const openCreateNodeFromHeader = () => {
+  const pool =
+    pools.value[0] ||
+    addNodePool({
+      name: t('nodePoolName'),
+      enabled: true,
+      dedupe: true,
+      nodes: [],
+    })
   openCreateNodeDialog(pool)
 }
 
@@ -905,7 +1600,9 @@ const emptyNodeForm = (): NodeFormData => ({
   port: 443,
   cipher: '',
   password: '',
+  alterId: 0,
   sni: '',
+  tls: false,
   fingerprint: '',
   alpnStr: '',
   wsPath: '',
@@ -944,7 +1641,9 @@ const openEditNodeDialog = (pool: NodePool, node: CustomNode) => {
     port: node.port,
     cipher: node.cipher ?? '',
     password: node.password ?? '',
+    alterId: node.alterId ?? 0,
     sni: node.sni ?? '',
+    tls: node.tls ?? false,
     fingerprint: node.fingerprint ?? '',
     alpnStr: (node.alpn ?? []).join(','),
     wsPath: node.wsPath ?? '',
@@ -962,10 +1661,19 @@ const openEditNodeDialog = (pool: NodePool, node: CustomNode) => {
 const pruneEmptyNodeForm = (form: NodeFormData): Record<string, unknown> => {
   const out: Record<string, unknown> = { ...form }
   delete out.alpnStr
-  for (const key of ['cipher', 'password', 'sni', 'fingerprint', 'wsPath', 'grpcServiceName'] as const) {
+  for (const key of [
+    'cipher',
+    'password',
+    'sni',
+    'fingerprint',
+    'wsPath',
+    'grpcServiceName',
+  ] as const) {
     if (!out[key]) delete out[key]
   }
   if (!(out.alpn as unknown[] | undefined)?.length) delete out.alpn
+  if (!out.alterId) delete out.alterId
+  if (!out.tls) delete out.tls
   if (!out.tfo) delete out.tfo
   if (!out.skipCertVerification) delete out.skipCertVerification
   return out
@@ -974,11 +1682,14 @@ const pruneEmptyNodeForm = (form: NodeFormData): Record<string, unknown> => {
 const switchNodeInputMode = (mode: 'form' | 'yaml') => {
   if (mode === 'yaml') {
     nodeYaml.value = stringifyYaml(pruneEmptyNodeForm(nodeForm.value), { indent: 2 })
-  }
-  else {
+  } else {
     try {
       const parsed = parseYaml(nodeYaml.value) as Partial<NodeFormData>
-      nodeForm.value = { ...emptyNodeForm(), ...parsed, alpnStr: Array.isArray(parsed.alpn) ? parsed.alpn.join(',') : parsed.alpnStr ?? '' }
+      nodeForm.value = {
+        ...emptyNodeForm(),
+        ...parsed,
+        alpnStr: Array.isArray(parsed.alpn) ? parsed.alpn.join(',') : (parsed.alpnStr ?? ''),
+      }
     } catch {
       showNotification({ content: 'invalidURL', type: 'alert-error' })
       return
@@ -987,14 +1698,20 @@ const switchNodeInputMode = (mode: 'form' | 'yaml') => {
   nodeInputMode.value = mode
 }
 
-const closeNodeDialog = () => { nodeDialogOpen.value = false }
+const closeNodeDialog = () => {
+  nodeDialogOpen.value = false
+}
 
 const saveNode = () => {
   if (!activePoolId.value) return
   if (nodeInputMode.value === 'yaml') {
     try {
       const parsed = parseYaml(nodeYaml.value) as Partial<NodeFormData>
-      nodeForm.value = { ...emptyNodeForm(), ...parsed, alpnStr: Array.isArray(parsed.alpn) ? parsed.alpn.join(',') : parsed.alpnStr ?? '' }
+      nodeForm.value = {
+        ...emptyNodeForm(),
+        ...parsed,
+        alpnStr: Array.isArray(parsed.alpn) ? parsed.alpn.join(',') : (parsed.alpnStr ?? ''),
+      }
     } catch {
       showNotification({ content: 'invalidURL', type: 'alert-error' })
       return
@@ -1009,9 +1726,18 @@ const saveNode = () => {
     port: rest.port,
     ...(rest.cipher ? { cipher: rest.cipher } : {}),
     ...(rest.password ? { password: rest.password } : {}),
+    ...(rest.type === 'vmess' && rest.alterId ? { alterId: rest.alterId } : {}),
     ...(rest.sni ? { sni: rest.sni } : {}),
+    ...(rest.tls ? { tls: true } : {}),
     ...(rest.fingerprint ? { fingerprint: rest.fingerprint } : {}),
-    ...(alpnStr ? { alpn: alpnStr.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+    ...(alpnStr
+      ? {
+          alpn: alpnStr
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        }
+      : {}),
     ...(rest.wsPath ? { wsPath: rest.wsPath } : {}),
     ...(rest.grpcServiceName ? { grpcServiceName: rest.grpcServiceName } : {}),
     ...(rest.tfo ? { tfo: true } : {}),
@@ -1034,6 +1760,9 @@ const removeNodeById = async (poolId: string, nodeId: string) => {
   })
   if (result.confirmed) {
     removeNode(poolId, nodeId)
+    const next = new Set(selectedNodeIds.value)
+    next.delete(nodeId)
+    selectedNodeIds.value = next
     showNotification({ content: 'nodeDeleteSuccess', type: 'alert-success' })
   }
 }
@@ -1043,23 +1772,31 @@ const testNode = async (nodeName: string) => {
   await testNodeLatency(nodeName)
 }
 
-const testAllStandaloneNodes = async () => {
-  for (const node of filteredNodes.value) await testNode(node.name)
+// 批量并发测速：各节点独立进行，互不阻塞
+const testNodesConcurrently = (names: Iterable<string>) => {
+  void Promise.allSettled([...names].map((name) => testNodeLatency(name)))
+}
+
+const testAllStandaloneNodes = () => {
+  const targets = selectedNodeIds.value.size
+    ? filteredNodes.value.filter((node) => selectedNodeIds.value.has(node.id))
+    : filteredNodes.value
+  testNodesConcurrently(targets.map((node) => node.name))
 }
 
 // 代理组里可测速的节点成员（排除子代理组/失效名）
 const groupNodeMembers = (group: ProxyGroupDraft): string[] =>
   resolveGroupMembers(group, [...nodeNameSet.value]).filter((name) => nodeNameSet.value.has(name))
 
-const testGroupNodes = async (group: ProxyGroupDraft) => {
-  for (const name of groupNodeMembers(group)) await testNode(name)
+const testGroupNodes = (group: ProxyGroupDraft) => {
+  testNodesConcurrently(groupNodeMembers(group))
 }
 
-const testAllGroupNodes = async () => {
+const testAllGroupNodes = () => {
   const names = new Set<string>()
   for (const group of visibleRealGroups.value) {
     for (const name of groupNodeMembers(group)) names.add(name)
   }
-  for (const name of names) await testNode(name)
+  testNodesConcurrently(names)
 }
 </script>

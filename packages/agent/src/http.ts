@@ -463,6 +463,25 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       return withSubscriptionHttpError(() => profiles.importFromUrl(body.url, body.name))
     }),
   )
+  // Server-side subscription fetch proxy: the browser cannot fetch most
+  // providers directly (no CORS headers), so the panel's subscription tab pulls
+  // through here. Returns raw content only — nothing is persisted.
+  router.post(
+    `${PREFIX}/subscriptions/fetch`,
+    defineEventHandler(async (event) => {
+      const body = (await readBody(event)) as { url?: string }
+      const url = body?.url ?? ''
+      if (!/^https?:\/\//i.test(url)) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Invalid subscription url',
+          data: { error: 'url must be an absolute http(s) URL' },
+        })
+      }
+      const content = await withSubscriptionHttpError(() => profiles.fetchContent(url))
+      return { ok: true, content }
+    }),
+  )
   router.post(
     `${PREFIX}/profiles/:id/refresh`,
     defineEventHandler(async (event) => {

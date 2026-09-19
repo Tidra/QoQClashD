@@ -16,8 +16,11 @@ const headers = () => ({
 })
 
 async function readServerValue<T>(key: string): Promise<T | undefined> {
+  // 必须 no-store：后端 KV 响应不带任何缓存头，浏览器会启发式缓存 GET 结果。
+  // 刷新后读到旧快照、种子修补再把旧快照回写，会静默清掉服务器上真实数据。
   const response = await fetch(`/api/control/storage/kv?key=${encodeURIComponent(key)}`, {
     headers: headers(),
+    cache: 'no-store',
   })
   if (!response.ok) throw new Error(`storage read failed: HTTP ${response.status}`)
   const body = (await response.json()) as { value: string | null }

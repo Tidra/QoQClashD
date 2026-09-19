@@ -201,6 +201,18 @@
               {{ $t('viewAction') }}
             </button>
             <button
+              class="btn btn-sm btn-primary"
+              :disabled="applyingConfig"
+              :title="$t('applyConfigSummary')"
+              @click="applyDraftConfig"
+            >
+              <span
+                v-if="applyingConfig"
+                class="loading loading-spinner h-4 w-4"
+              ></span>
+              <template v-else>{{ $t('applyConfig') }}</template>
+            </button>
+            <button
               class="btn btn-sm min-w-11"
               :disabled="!reloadConfigsAction || reloadConfigsAction.running"
               :aria-label="$t('reloadConfigs')"
@@ -274,6 +286,7 @@ import {
   waitKernelRunning,
 } from '@/composables/useKernelBackend'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
+import { applyComposedConfig } from '@/helper/applyConfig'
 import { notifyRequestError } from '@/helper/requestError'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
@@ -287,6 +300,20 @@ const { t } = useI18n()
 const k = BACKEND_ITEM_KEYS
 const showYamlViewer = ref(false)
 const controlApi = useControlApi()
+
+const applyingConfig = ref(false)
+const applyDraftConfig = async () => {
+  if (applyingConfig.value) return
+  applyingConfig.value = true
+  try {
+    await applyComposedConfig()
+    showNotification({ content: 'applyConfigSuccess', type: 'alert-success' })
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    applyingConfig.value = false
+  }
+}
 const runtimeInfo = ref<{
   root: string
   kernel: string

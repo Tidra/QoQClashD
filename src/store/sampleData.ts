@@ -96,6 +96,7 @@ export function seedSampleData() {
 
 const SAMPLE_DATA_VERSION_V2 = 5
 const SAMPLE_DATA_VERSION = 7
+const SAMPLE_DATA_VERSION_V4 = 12
 const ROUTING_SAMPLE_DATA_VERSION = 8
 const ROUTING_SAMPLE_DATA_VERSION_V2 = 9
 const sampleDataVersion = useStorage<number>('config/sample-data-version', 0)
@@ -486,6 +487,60 @@ export function seedRoutingDataV2() {
   sampleDataVersion.value = ROUTING_SAMPLE_DATA_VERSION_V2
 }
 
+/**
+ * v12 补齐式补丁：
+ * 1) 早期示例节点缺少密钥字段（vmess/vless 无 uuid、trojan/ss 无 password），SS 加密名
+ *    chacha20-poly1305 不是 mihomo 支持的算法，组合出的核心配置会被内核校验拒绝；
+ * 2) 示例节点曾被一次存储回写竞态清空，启动时"失效成员自动剔除"把示例代理组成员剪空，
+ *    空成员组又会让内核报 `use or proxies missing`。这里按种子定义把成员补回来。
+ * 只补缺/纠正已知错误值，不删除、不覆盖正常数据；幂等，可安全重放。
+ */
+const SEED_GROUP_MEMBERS: Record<string, { proxies: string[]; default?: string }> = {
+  手动选择: {
+    proxies: ['JP-Tokyo-02', 'HK-CT-HY2', 'US-LA-03', 'TW-Hinet-01'],
+    default: 'HK-CT-HY2',
+  },
+  自动最优: { proxies: ['JP-Tokyo-02', 'SG-Frieren-03', 'KR-Seoul-01'] },
+  故障转移: { proxies: ['US-LA-03', '手动选择'] },
+  负载均衡: { proxies: ['TW-Hinet-01', 'KR-Seoul-01', '自动最优'] },
+  '东京·筛选': { proxies: ['JP-Tokyo-02'] },
+  '欧美·高速': { proxies: ['London-01', 'Frankfurt-01', 'NewYork-02'] },
+}
+
+export function seedSampleDataV4() {
+  if (sampleDataVersion.value >= SAMPLE_DATA_VERSION_V4) return
+  const SAMPLE_UUID = '00000000-0000-4000-8000-000000000001'
+  const SAMPLE_SECRET = 'sample-secret'
+  for (const pool of nodePools.value) {
+    for (const node of pool.nodes) {
+      if (!node.password && ['vmess', 'vless', 'trojan', 'ss', 'ssr'].includes(node.type))
+        node.password = node.type === 'vmess' || node.type === 'vless' ? SAMPLE_UUID : SAMPLE_SECRET
+      if ((node.type === 'ss' || node.type === 'ssr') && node.cipher === 'chacha20-poly1305')
+        node.cipher = 'chacha20-ietf-poly1305'
+    }
+  }
+
+  const known = new Set([
+    ...buildMergedNodeList().map((node) => node.name),
+    ...proxyGroups.value.map((group) => group.name),
+  ])
+  for (const [name, seed] of Object.entries(SEED_GROUP_MEMBERS)) {
+    const group = proxyGroups.value.find((item) => item.name === name)
+    if (!group) continue
+    const extra = seed.proxies.filter((m) => known.has(m) && !group.proxies.includes(m))
+    const merged = [...group.proxies, ...extra]
+    const needDefault = seed.default && !group['default-selected'] && merged.includes(seed.default)
+    if (!extra.length && !needDefault) continue
+    upsertProxyGroup({
+      ...group,
+      proxies: merged,
+      ...(needDefault ? { 'default-selected': seed.default } : {}),
+    })
+  }
+
+  sampleDataVersion.value = SAMPLE_DATA_VERSION_V4
+}
+
 // 等存储完成首次服务器读取后再判断是否注入。
 // 若在读取完成前同步执行，nodePools 还是默认空值，会误判"无数据"注入示例，
 // 读取失败时示例数据还会被 watch 回写、覆盖数据库里的真实节点。
@@ -493,6 +548,7 @@ void whenStorageReady().then(() => {
   seedSampleData()
   seedSampleDataV2()
   seedSampleDataV3()
+  seedSampleDataV4()
   seedRoutingData()
   seedRoutingDataV2()
 

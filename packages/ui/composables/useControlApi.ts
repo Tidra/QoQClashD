@@ -195,6 +195,15 @@ export function useControlApi() {
           timeout: PROFILE_SUBSCRIPTION_TIMEOUT,
         })
         .json<ProfileMeta>(),
+    // Server-side subscription fetch proxy (browser-direct fetch is CORS
+    // blocked). Returns raw content only; nothing is persisted.
+    fetchSubscriptionContent: (url: string) =>
+      client
+        .post('subscriptions/fetch', {
+          json: { url },
+          timeout: PROFILE_SUBSCRIPTION_TIMEOUT,
+        })
+        .json<{ ok: boolean; content: string }>(),
     activateProfile: (id: string) =>
       client
         .post(`profiles/${id}/activate`, {

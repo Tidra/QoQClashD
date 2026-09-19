@@ -1,11 +1,11 @@
+import { useControlApi } from '@/composables/useControlApi'
 import { showNotification } from '@/helper/notification'
-import { useI18n } from 'vue-i18n'
 import { useStorage } from '@/helper/storage'
+import type { CustomNode } from '@/store/nodePool'
+import { addNodePool, nodePools, removeNodePool, updateNodePool } from '@/store/nodePool'
+import { v4 as uuid } from 'uuid'
 import { ref } from 'vue'
 import { parse as parseYaml } from 'yaml'
-import { addNodePool, nodePools, removeNodePool, updateNodePool } from '@/store/nodePool'
-import type { CustomNode } from '@/store/nodePool'
-import { v4 as uuid } from 'uuid'
 
 export interface SubscriptionItem {
   id: string
@@ -64,14 +64,12 @@ export const toggleSubscription = (id: string) => {
   )
 }
 
-// 拉取订阅内容。返回解析出的 YAML 文本（可能为 base64 解码后的结果），
-// 失败抛错由调用方捕获。CORS 受限时提示用户。
+// 拉取订阅内容。走面板后端代理（POST /api/control/subscriptions/fetch），
+// 因为大多数订阅源不带 CORS 头，浏览器直连 fetch 必然被拦。
+// 返回解析出的 YAML 文本（可能为 base64 解码后的结果），失败抛错由调用方捕获。
 export const fetchSubscriptionContent = async (url: string): Promise<string> => {
-  const response = await fetch(url, { headers: { Accept: 'text/yaml, application/json, */*' } })
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-  let text = await response.text()
+  const res = await useControlApi().fetchSubscriptionContent(url)
+  let text = res.content
 
   // 部分订阅源返回 base64 编码的 YAML（典型 Clash 订阅特征）。
   const trimmed = text.trim()
@@ -151,9 +149,7 @@ const parseSubscriptionNodes = (content: string): Omit<CustomNode, 'id'>[] => {
   } catch {
     return []
   }
-  const rawList = Array.isArray(doc)
-    ? doc
-    : (doc as { proxies?: unknown })?.proxies
+  const rawList = Array.isArray(doc) ? doc : (doc as { proxies?: unknown })?.proxies
   if (!Array.isArray(rawList)) return []
 
   const nodes: Omit<CustomNode, 'id'>[] = []
@@ -167,26 +163,64 @@ const parseSubscriptionNodes = (content: string): Omit<CustomNode, 'id'>[] => {
     if (!name || !type || !server || !Number.isInteger(port) || port <= 0 || port > 65535) continue
 
     const alpn = Array.isArray(p.alpn) ? (p.alpn as unknown[]).map(String) : undefined
+    // vmess/vless 用 uuid，trojan/ss/hy2 用 password——面板里统一存进 password 字段。
+    const secret =
+      typeof p.password === 'string' && p.password
+        ? p.password
+        : typeof p.uuid === 'string'
+          ? p.uuid
+          : ''
+    const alterIdRaw = Number(p.alterId ?? p['alter-id'])
+    const network = typeof p.network === 'string' ? p.network.toLowerCase() : ''
+    const wsOpts = (p['ws-opts'] ?? (network === 'ws' ? p : undefined)) as
+      Record<string, unknown> | undefined
+    const wsPath =
+      typeof p['ws-path'] === 'string'
+        ? p['ws-path']
+        : typeof p.path === 'string'
+          ? p.path
+          : typeof wsOpts?.path === 'string'
+            ? wsOpts.path
+            : ''
+    const rawHeaders = wsOpts?.headers as Record<string, unknown> | undefined
+    const wsHeaders = rawHeaders
+      ? Object.fromEntries(
+          Object.entries(rawHeaders).map(([k, v]) => [
+            k,
+            Array.isArray(v) ? v.map(String) : [String(v)],
+          ]),
+        )
+      : undefined
+    const grpcOpts = (p['grpc-opts'] ?? (network === 'grpc' ? p : undefined)) as
+      Record<string, unknown> | undefined
+    const grpcServiceName =
+      typeof p['grpc-service-name'] === 'string'
+        ? p['grpc-service-name']
+        : typeof grpcOpts?.['grpc-service-name'] === 'string'
+          ? grpcOpts['grpc-service-name']
+          : ''
     const node: Omit<CustomNode, 'id'> = {
       name,
       type,
       server,
       port,
       ...(typeof p.cipher === 'string' && p.cipher ? { cipher: p.cipher } : {}),
-      ...(typeof p.password === 'string' && p.password ? { password: p.password } : {}),
-      sni:
-        typeof p.sni === 'string' ? p.sni
-        : typeof p.servername === 'string' ? p.servername
-        : '',
+      ...(secret ? { password: secret } : {}),
+      ...(Number.isInteger(alterIdRaw) && alterIdRaw > 0 ? { alterId: alterIdRaw } : {}),
+      sni: typeof p.sni === 'string' ? p.sni : typeof p.servername === 'string' ? p.servername : '',
+      tls: p.tls === true || (p.tls as { enabled?: unknown } | undefined)?.enabled === true,
       fingerprint:
-        typeof p.fingerprint === 'string' ? p.fingerprint
-        : typeof p['client-fingerprint'] === 'string' ? p['client-fingerprint'] as string
-        : '',
+        typeof p.fingerprint === 'string'
+          ? p.fingerprint
+          : typeof p['client-fingerprint'] === 'string'
+            ? (p['client-fingerprint'] as string)
+            : '',
       ...(alpn?.length ? { alpn } : {}),
       tfo: p.tfo === true,
       skipCertVerification: p['skip-cert-verify'] === true || p.skipCertVerification === true,
-      wsPath: typeof p['ws-path'] === 'string' ? p['ws-path'] : typeof p.path === 'string' ? p.path : '',
-      grpcServiceName: typeof p['grpc-service-name'] === 'string' ? p['grpc-service-name'] : '',
+      wsPath,
+      ...(wsHeaders ? { wsHeaders } : {}),
+      grpcServiceName,
     }
     nodes.push(node)
   }
@@ -207,13 +241,21 @@ export const applySubscriptionContent = (id: string, content: string): number =>
     updateNodePool(existing.id, { name: item.name, nodes })
     return nodes.length
   }
-  const pool = addNodePool({ name: item.name, enabled: true, dedupe: true, nodes: [], subscriptionId: id })
+  const pool = addNodePool({
+    name: item.name,
+    enabled: true,
+    dedupe: true,
+    nodes: [],
+    subscriptionId: id,
+  })
   updateNodePool(pool.id, { nodes })
   updateSubscription(id, { poolId: pool.id })
   return nodes.length
 }
 
-export const refreshSubscriptionWithImport = async (id: string): Promise<{ ok: boolean; imported: number; error?: string }> => {
+export const refreshSubscriptionWithImport = async (
+  id: string,
+): Promise<{ ok: boolean; imported: number; error?: string }> => {
   const result = await refreshSubscription(id)
   if (!result.ok) return { ok: false, imported: 0, error: result.error }
   const imported = result.content ? applySubscriptionContent(id, result.content) : 0
