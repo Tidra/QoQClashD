@@ -13,6 +13,8 @@ export type Backend = {
   label?: string
   disableUpgradeCore?: boolean
   disableTunMode?: boolean
+  /** 由面板 agent 托管的内置内核,连接失败时引导去启动内核而非改后端配置 */
+  managedKernel?: boolean
 }
 
 export type Config = {
@@ -40,10 +42,10 @@ export type Config = {
   }
   dns?: {
     enable?: boolean
-    'listen'?: string
+    listen?: string
     ipv6?: boolean
     'default-nameserver'?: string[]
-    'nameserver'?: string[]
+    nameserver?: string[]
   }
 }
 
@@ -62,7 +64,6 @@ export type Proxy = {
       alive: boolean
       history: History
     }
-
   >
   all?: string[]
   udp?: boolean

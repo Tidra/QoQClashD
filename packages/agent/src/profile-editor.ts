@@ -3,24 +3,11 @@ import type {
   ConfigPatchConflict,
   ConfigPatchV1,
 } from '@metacubexd/config-editor'
-import type {
-  KernelState,
-  MihomoSupervisor,
-  ProfileMeta,
-  ProfileStore,
-} from './types'
-import {
-  applyPatch,
-  diffDocument,
-  openDocument,
-} from '@metacubexd/config-editor'
+import { applyPatch, diffDocument, openDocument } from '@metacubexd/config-editor'
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  ConfigPatchConflictError,
-  parseVisualPatch,
-  visualPatchContent,
-} from './merge'
+import { ConfigPatchConflictError, parseVisualPatch, visualPatchContent } from './merge'
+import type { KernelState, MihomoSupervisor, ProfileMeta, ProfileStore } from './types'
 
 export interface ProfileEditorSnapshot {
   profile: ProfileMeta
@@ -50,6 +37,8 @@ export interface ProfileConfigEditor {
   preview: (id: string, patch: ConfigPatchV1) => Promise<ProfileEditorPreview>
   apply: (id: string, patch: ConfigPatchV1) => Promise<ProfileEditorApplyResult>
   resetManagedOverlay: (id: string) => Promise<KernelState | undefined>
+  // Follow a runtime config-dir relocation: temp validate candidates move there.
+  setHomeDir: (dir: string) => void
 }
 
 export interface ProfileConfigEditorOptions {
@@ -77,22 +66,18 @@ export class ProfileEditorValidationError extends Error {
 
 const SCHEMA_VERSION = 'meta-json-schema@1.19.28'
 
-function managedOverlay(
-  list: ProfileMeta[],
-  baseId: string,
-): ProfileMeta | undefined {
+function managedOverlay(list: ProfileMeta[], baseId: string): ProfileMeta | undefined {
   return list.find(
     (meta) =>
-      meta.type === 'merge' &&
-      meta.baseProfileId === baseId &&
-      meta.managedBy === 'visual-editor',
+      meta.type === 'merge' && meta.baseProfileId === baseId && meta.managedBy === 'visual-editor',
   )
 }
 
 export function createProfileConfigEditor(
   options: ProfileConfigEditorOptions,
 ): ProfileConfigEditor {
-  const { profiles, supervisor, homeDir } = options
+  const { profiles, supervisor } = options
+  let homeDir = options.homeDir
 
   async function findProfile(id: string): Promise<ProfileMeta> {
     const meta = (await profiles.list()).find((item) => item.id === id)
@@ -113,9 +98,7 @@ export function createProfileConfigEditor(
     const baseYaml = await profiles.read(id)
     const baseDocument = openDocument(baseYaml)
     const overlay = managedOverlay(list, id)
-    const storedPatch = overlay
-      ? parseVisualPatch(await profiles.read(overlay.id))
-      : undefined
+    const storedPatch = overlay ? parseVisualPatch(await profiles.read(overlay.id)) : undefined
     const patched = storedPatch
       ? applyPatch(baseDocument, storedPatch)
       : { document: baseDocument, conflicts: [], applied: 0 }
@@ -129,11 +112,7 @@ export function createProfileConfigEditor(
     }
   }
 
-  async function composeForDraft(
-    id: string,
-    profile: ProfileMeta,
-    editableYaml: string,
-  ) {
+  async function composeForDraft(id: string, profile: ProfileMeta, editableYaml: string) {
     if (profile.type === 'remote') {
       const baseYaml = await profiles.read(id)
       const cumulative = diffDocument(baseYaml, editableYaml)
@@ -157,11 +136,7 @@ export function createProfileConfigEditor(
     let composedYaml = state.editableDocument.yaml
     let composition: ProfileMeta[] = []
     try {
-      const composed = await composeForDraft(
-        id,
-        state.profile,
-        state.editableDocument.yaml,
-      )
+      const composed = await composeForDraft(id, state.profile, state.editableDocument.yaml)
       composedYaml = composed.content
       composition = composed.composition
     } catch (error) {
@@ -180,10 +155,7 @@ export function createProfileConfigEditor(
     }
   }
 
-  async function preview(
-    id: string,
-    patch: ConfigPatchV1,
-  ): Promise<ProfileEditorPreview> {
+  async function preview(id: string, patch: ConfigPatchV1): Promise<ProfileEditorPreview> {
     const state = await editableState(id)
     const applied = applyPatch(state.editableDocument, patch)
     // Opening reports stored-patch conflicts. Submitting a new draft is the
@@ -191,11 +163,7 @@ export function createProfileConfigEditor(
     // the refreshed base plus this partial document, so old conflicting ops
     // are either recreated by the user or intentionally dropped.
     const conflicts = applied.conflicts
-    const composed = await composeForDraft(
-      id,
-      state.profile,
-      applied.document.yaml,
-    )
+    const composed = await composeForDraft(id, state.profile, applied.document.yaml)
     return {
       profile: state.profile,
       active: (await profiles.getActiveId()) === id,
@@ -210,24 +178,16 @@ export function createProfileConfigEditor(
     }
   }
 
-  async function apply(
-    id: string,
-    patch: ConfigPatchV1,
-  ): Promise<ProfileEditorApplyResult> {
+  async function apply(id: string, patch: ConfigPatchV1): Promise<ProfileEditorApplyResult> {
     const before = await editableState(id)
     const result = await preview(id, patch)
     if (result.conflicts.length) {
       throw new ProfileEditorConflictError(result.conflicts)
     }
-    const errors = result.diagnostics.filter(
-      (diagnostic) => diagnostic.severity === 'error',
-    )
+    const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
     if (errors.length) throw new ProfileEditorValidationError(errors)
 
-    const candidate = join(
-      homeDir,
-      `.editor-${id}-${Date.now().toString(36)}.yaml`,
-    )
+    const candidate = join(homeDir, `.editor-${id}-${Date.now().toString(36)}.yaml`)
     await writeFile(candidate, result.composedYaml)
     try {
       const validation = await supervisor.validate(candidate)
@@ -291,9 +251,7 @@ export function createProfileConfigEditor(
           await profiles.delete(createdOverlayId).catch(() => {})
         }
       } else {
-        await profiles
-          .update(id, { content: originalProfileContent })
-          .catch(() => {})
+        await profiles.update(id, { content: originalProfileContent }).catch(() => {})
       }
       await profiles
         .update(id, { editorStatus: before.profile.editorStatus ?? null })
@@ -309,9 +267,7 @@ export function createProfileConfigEditor(
     }
   }
 
-  async function resetManagedOverlay(
-    id: string,
-  ): Promise<KernelState | undefined> {
+  async function resetManagedOverlay(id: string): Promise<KernelState | undefined> {
     const list = await profiles.list()
     const overlay = managedOverlay(list, id)
     if (!overlay) return undefined
@@ -327,10 +283,7 @@ export function createProfileConfigEditor(
     const candidate = await profiles.compose(id, {
       managedOverlayContent: visualPatchContent(emptyPatch),
     })
-    const candidatePath = join(
-      homeDir,
-      `.editor-reset-${id}-${Date.now().toString(36)}.yaml`,
-    )
+    const candidatePath = join(homeDir, `.editor-reset-${id}-${Date.now().toString(36)}.yaml`)
     await writeFile(candidatePath, candidate.content)
     try {
       const validation = await supervisor.validate(candidatePath)
@@ -357,9 +310,7 @@ export function createProfileConfigEditor(
           editorStatus: overlay.editorStatus,
         })
         .catch(() => {})
-      await profiles
-        .update(id, { editorStatus: base.editorStatus ?? null })
-        .catch(() => {})
+      await profiles.update(id, { editorStatus: base.editorStatus ?? null }).catch(() => {})
       if (active) {
         await profiles.setActive(id).catch(() => {})
         await supervisor.restart().catch(() => {})
@@ -368,5 +319,13 @@ export function createProfileConfigEditor(
     }
   }
 
-  return { open, preview, apply, resetManagedOverlay }
+  return {
+    open,
+    preview,
+    apply,
+    resetManagedOverlay,
+    setHomeDir(dir: string) {
+      homeDir = dir
+    },
+  }
 }

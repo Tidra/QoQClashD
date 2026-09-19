@@ -13,6 +13,24 @@ const ARCH_MAP: Record<string, 'amd64' | 'arm64'> = {
   arm64: 'arm64',
 }
 
+/**
+ * GitHub release 加速前缀白名单：key 为仓库选择项，value 为拼在原始下载链接
+ * 前的代理前缀（空串 = 直连 GitHub）。只允许这些固定前缀，避免下载 URL 被
+ * 任意注入。
+ */
+export const KERNEL_MIRRORS: Record<string, string> = {
+  direct: '',
+  'gh-proxy': 'https://gh-proxy.com/',
+  ghfast: 'https://ghfast.top/',
+  ghproxy: 'https://mirror.ghproxy.com/',
+}
+
+export function applyMirror(url: string, mirror?: string): string {
+  if (!mirror || mirror === 'direct') return url
+  const prefix = KERNEL_MIRRORS[mirror]
+  return prefix ? `${prefix}${url}` : url
+}
+
 export interface MihomoAsset {
   name: string
   url: string

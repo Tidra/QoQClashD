@@ -1,18 +1,11 @@
-import type { ScriptRunner } from './script'
-import type { ProfileMeta, ProfileStore } from './types'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 import { ConfigPatchConflictError, isPlainObject, mergeConfigs } from './merge'
+import type { ScriptRunner } from './script'
+import type { ProfileMeta, ProfileStore } from './types'
 
 export interface ProfileStoreOptions {
   dir: string
@@ -39,7 +32,10 @@ export class SubscriptionFetchError extends Error {
 }
 
 export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
-  const { dir, activeConfigPath, scriptRunner } = opts
+  const { dir, scriptRunner } = opts
+  // Mutable so the settings page can relocate the config dir at runtime; every
+  // setActive/rollback/resetActive call reads the current value.
+  let activeConfigPath = opts.activeConfigPath
   const doFetch = opts.fetch ?? fetch
   const subscriptionTimeoutMs = opts.subscriptionTimeoutMs ?? 30_000
   const idGen = opts.idGen ?? (() => randomUUID())
@@ -128,15 +124,11 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
         throw new SubscriptionFetchError(res.status)
       }
       const content = await res.text()
-      const subscriptionInfo = parseSubscriptionUserinfo(
-        res.headers.get('subscription-userinfo'),
-      )
+      const subscriptionInfo = parseSubscriptionUserinfo(res.headers.get('subscription-userinfo'))
       return { content, subscriptionInfo }
     } catch (err) {
       if (signal.aborted) {
-        throw new Error(
-          `subscription fetch timed out after ${subscriptionTimeoutMs}ms for ${url}`,
-        )
+        throw new Error(`subscription fetch timed out after ${subscriptionTimeoutMs}ms for ${url}`)
       }
       throw err
     }
@@ -157,20 +149,14 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
       const current = await readIndex()
       if (i.managedBy === 'visual-editor') {
         if (i.type !== 'merge' || !i.baseProfileId) {
-          throw new Error(
-            'visual editor overlays must be scoped merge profiles',
-          )
+          throw new Error('visual editor overlays must be scoped merge profiles')
         }
         if (
           current.some(
-            (meta) =>
-              meta.managedBy === 'visual-editor' &&
-              meta.baseProfileId === i.baseProfileId,
+            (meta) => meta.managedBy === 'visual-editor' && meta.baseProfileId === i.baseProfileId,
           )
         ) {
-          throw new Error(
-            `visual editor overlay already exists for ${i.baseProfileId}`,
-          )
+          throw new Error(`visual editor overlay already exists for ${i.baseProfileId}`)
         }
       }
       const id = idGen()
@@ -206,12 +192,7 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
       else if (p.editorStatus !== undefined) meta.editorStatus = p.editorStatus
       // Editor status is derived metadata; changing it must not reset the
       // subscription refresh schedule.
-      if (
-        p.name != null ||
-        p.content != null ||
-        p.enabled != null ||
-        p.updateInterval != null
-      ) {
+      if (p.name != null || p.content != null || p.enabled != null || p.updateInterval != null) {
         meta.updatedAt = Date.now()
       }
       await writeIndex(list)
@@ -224,14 +205,10 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
       if (!removed) throw new Error(`profile not found: ${id}`)
       const removedIds = new Set([
         id,
-        ...list
-          .filter((meta) => meta.baseProfileId === id)
-          .map((meta) => meta.id),
+        ...list.filter((meta) => meta.baseProfileId === id).map((meta) => meta.id),
       ])
       await Promise.all(
-        [...removedIds].map((removedId) =>
-          rm(profilePath(removedId), { force: true }),
-        ),
+        [...removedIds].map((removedId) => rm(profilePath(removedId), { force: true })),
       )
       const retained = list.filter((m) => !removedIds.has(m.id))
       if (removed.managedBy === 'visual-editor' && removed.baseProfileId) {
@@ -264,10 +241,7 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
     async importFromUrl(url, name) {
       await ensureDir()
       const userAgent = 'clash.meta'
-      const { content, subscriptionInfo } = await fetchSubscription(
-        url,
-        userAgent,
-      )
+      const { content, subscriptionInfo } = await fetchSubscription(url, userAgent)
       const id = idGen()
       const meta: ProfileMeta = {
         id,
@@ -291,10 +265,7 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
         throw new Error(`refresh: profile ${id} is not a remote subscription`)
       }
       const userAgent = meta.userAgent ?? 'clash.meta'
-      const { content, subscriptionInfo } = await fetchSubscription(
-        meta.url,
-        userAgent,
-      )
+      const { content, subscriptionInfo } = await fetchSubscription(meta.url, userAgent)
       // Overwrite the SAME file in place — keep the same id (no orphan).
       await atomicWrite(profilePath(id), content)
       meta.updatedAt = Date.now()
@@ -334,12 +305,10 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
           `setActive: profile ${id} is a ${base.type} overlay and cannot be the active base`,
         )
       }
-      const baseContent =
-        overrides?.profileContent ?? (await readFile(profilePath(id), 'utf8'))
+      const baseContent = overrides?.profileContent ?? (await readFile(profilePath(id), 'utf8'))
       const index = await readIndex()
       const managed = index.filter(
-        (meta) =>
-          meta.managedBy === 'visual-editor' && meta.baseProfileId === id,
+        (meta) => meta.managedBy === 'visual-editor' && meta.baseProfileId === id,
       )
       if (managed.length > 1) {
         throw new Error(`multiple visual editor overlays found for ${id}`)
@@ -380,18 +349,13 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
       // Previewing the first visual edit has no on-disk managed overlay yet.
       // Apply the supplied candidate as the final merge layer, matching where
       // the newly-created managed profile will be appended in the index.
-      if (
-        overrides?.managedOverlayContent !== undefined &&
-        !managedOverrideApplied
-      ) {
+      if (overrides?.managedOverlayContent !== undefined && !managedOverrideApplied) {
         overlays.push(overrides.managedOverlayContent)
       }
       // Compose pipeline: base -> merge overlays -> script transforms.
       // No overlays AND no scripts -> write the base verbatim (preserve
       // formatting byte-for-byte).
-      let content = overlays.length
-        ? mergeConfigs(baseContent, overlays)
-        : baseContent
+      let content = overlays.length ? mergeConfigs(baseContent, overlays) : baseContent
       if (scripts.length && scriptRunner) {
         let obj = parse(content) as unknown
         for (const code of scripts) {
@@ -400,6 +364,10 @@ export function createProfileStore(opts: ProfileStoreOptions): ProfileStore {
         content = stringify(obj)
       }
       return { content, composition }
+    },
+
+    setActiveConfigPath(path: string) {
+      activeConfigPath = path
     },
 
     async rollback() {

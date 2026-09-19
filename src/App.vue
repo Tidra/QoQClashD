@@ -10,6 +10,7 @@ import BackendManager from './components/settings/backend/BackendManager.vue'
 import UpdateConfigModal from './components/settings/backend/UpdateConfigModal.vue'
 import UpgradeCoreModal from './components/settings/backend/UpgradeCoreModal.vue'
 import { useAppearanceVars } from './composables/useAppearanceVars'
+import { syncKernelBackend } from './composables/useKernelBackend'
 import { showUpdateConfigModal, showUpgradeCoreModal } from './composables/backendActions'
 import ConfirmDialogHost from './components/common/ConfirmDialogHost.vue'
 import { useKeyboard } from './composables/keyboard'
@@ -182,6 +183,8 @@ autoSwitchToURLBackendIfExists()
 
 onMounted(async () => {
   setThemeColor()
+  // 内核若已在运行（面板重启/刷新），自动登记为内置后端，免去手动配置。
+  void syncKernelBackend()
 
   if (autoImportSettings.value) {
     await importSettingsFromUrl()

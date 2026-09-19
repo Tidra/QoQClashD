@@ -1,17 +1,12 @@
 import type { Buffer } from 'node:buffer'
 import type { ChildProcess } from 'node:child_process'
-import type {
-  KernelLogLine,
-  KernelState,
-  MihomoSupervisor,
-  SupervisorOptions,
-} from './types'
 import { spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import treeKillDefault from 'tree-kill'
 import { parse } from 'yaml'
+import type { KernelLogLine, KernelState, MihomoSupervisor, SupervisorOptions } from './types'
 
 export interface SupervisorDeps {
   spawn?: (cmd: string, args: string[], opts?: object) => ChildProcess
@@ -55,12 +50,10 @@ export function createSupervisor(
   opts: CreateSupervisorOptions,
   deps: SupervisorDeps = {},
 ): MihomoSupervisor {
-  const spawn =
-    deps.spawn ?? (nodeSpawn as unknown as NonNullable<SupervisorDeps['spawn']>)
+  const spawn = deps.spawn ?? (nodeSpawn as unknown as NonNullable<SupervisorDeps['spawn']>)
   const doFetch = deps.fetch ?? fetch
   const treeKill =
-    deps.treeKill ??
-    (treeKillDefault as unknown as NonNullable<SupervisorDeps['treeKill']>)
+    deps.treeKill ?? (treeKillDefault as unknown as NonNullable<SupervisorDeps['treeKill']>)
   const now = deps.now ?? Date.now
   const platform = deps.platform ?? process.platform
   const setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
@@ -92,6 +85,10 @@ export function createSupervisor(
   // Mutable so the kernel binary can be swapped at runtime (takes effect on the
   // next start/validate spawn — the live process keeps the path it was started with).
   let binaryPath = opts.binaryPath
+  // Mutable like binaryPath: the settings page can relocate the config dir
+  // while the agent runs. Effective on the next start/validate spawn.
+  let homeDir = opts.homeDir
+  let activeConfigPath = opts.activeConfigPath
   const run = createMutex()
 
   // Crash watchdog: a user-initiated stop sets intentionalStop so proc 'exit'
@@ -144,9 +141,7 @@ export function createSupervisor(
       if (state.status === 'errored') return false
       try {
         const res = await doFetch(versionUrl(), {
-          headers: state.secret
-            ? { Authorization: `Bearer ${state.secret}` }
-            : undefined,
+          headers: state.secret ? { Authorization: `Bearer ${state.secret}` } : undefined,
         })
         if (res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
@@ -187,16 +182,11 @@ export function createSupervisor(
   // mixed-port=0 at runtime even though active.yaml still says 7890 (#2136).
   async function injectClashConfig(): Promise<void> {
     let existing = ''
-    if (existsSync(opts.activeConfigPath)) {
-      existing = await readFile(opts.activeConfigPath, 'utf8')
+    if (existsSync(activeConfigPath)) {
+      existing = await readFile(activeConfigPath, 'utf8')
     }
     const managedKeys = new Set(['external-controller', 'secret', 'mixed-port'])
-    const listenerPortKeys = new Set([
-      'port',
-      'socks-port',
-      'redir-port',
-      'tproxy-port',
-    ])
+    const listenerPortKeys = new Set(['port', 'socks-port', 'redir-port', 'tproxy-port'])
     const shouldStripTopLevelKey = (line: string): boolean => {
       const separator = line.indexOf(':')
       if (separator === -1) return false
@@ -222,7 +212,7 @@ export function createSupervisor(
       ...(mixedPort != null ? [`mixed-port: ${mixedPort}`] : []),
       '',
     ].join('\n')
-    await writeFile(opts.activeConfigPath, header + kept)
+    await writeFile(activeConfigPath, header + kept)
   }
 
   function cancelStabilityReset(): void {
@@ -255,8 +245,7 @@ export function createSupervisor(
   }
 
   async function doStart(): Promise<KernelState> {
-    if (state.status === 'running' || state.status === 'starting')
-      return { ...state }
+    if (state.status === 'running' || state.status === 'starting') return { ...state }
     // A (re)start clears the intentional-stop flag so a later crash is detectable.
     intentionalStop = false
     setState({
@@ -269,12 +258,7 @@ export function createSupervisor(
 
     await injectClashConfig()
 
-    const proc = spawn(binaryPath, [
-      '-d',
-      opts.homeDir,
-      '-f',
-      opts.activeConfigPath,
-    ])
+    const proc = spawn(binaryPath, ['-d', homeDir, '-f', activeConfigPath])
     child = proc
     setState({ pid: proc.pid ?? undefined, startedAt: now() })
 
@@ -284,8 +268,7 @@ export function createSupervisor(
       child = undefined
       // This run is over; a stability reset armed for it must not fire later.
       cancelStabilityReset()
-      const wasActive =
-        state.status === 'starting' || state.status === 'running'
+      const wasActive = state.status === 'starting' || state.status === 'running'
       if (wasActive) {
         setState({
           status: 'errored',
@@ -330,15 +313,10 @@ export function createSupervisor(
     }
     setState({ status: 'stopping' })
     const proc = child
-    const exited = new Promise<void>((resolve) =>
-      proc.once('exit', () => resolve()),
-    )
+    const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
     killProc('SIGTERM')
     const timer = sleep(stopTimeoutMs, now).then(() => 'timeout' as const)
-    const winner = await Promise.race([
-      exited.then(() => 'exited' as const),
-      timer,
-    ])
+    const winner = await Promise.race([exited.then(() => 'exited' as const), timer])
     if (winner === 'timeout') killProc('SIGKILL')
     await exited
     child = undefined
@@ -365,20 +343,21 @@ export function createSupervisor(
     setBinaryPath(path: string) {
       binaryPath = path
     },
+    setPaths(patch: { homeDir?: string; activeConfigPath?: string }) {
+      if (patch.homeDir !== undefined) homeDir = patch.homeDir
+      if (patch.activeConfigPath !== undefined) activeConfigPath = patch.activeConfigPath
+    },
     async validate(configPath) {
       return new Promise((resolve) => {
-        const proc = spawn(binaryPath, [
-          '-t',
-          '-d',
-          opts.homeDir,
-          '-f',
-          configPath,
-        ])
+        const proc = spawn(binaryPath, ['-t', '-d', homeDir, '-f', configPath])
         let out = ''
         proc.stdout?.on('data', (c: Buffer) => (out += c.toString()))
         proc.stderr?.on('data', (c: Buffer) => (out += c.toString()))
 
         let settled = false
+        // finish() 读 timeoutHandle、超时回调又调 finish(),二者互相引用,
+        // 只能先声明后赋值,const 会触发 TDZ 编译错误。
+        // eslint-disable-next-line prefer-const
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined
         let killGraceHandle: ReturnType<typeof setTimeout> | undefined
         let timedOut = false
@@ -419,23 +398,14 @@ export function createSupervisor(
           // it, release the caller after a bounded grace period rather than
           // hanging forever.
           if (!settled) {
-            killGraceHandle = setTimer(
-              () => finish(timeoutResult()),
-              VALIDATE_KILL_GRACE_MS,
-            )
+            killGraceHandle = setTimer(() => finish(timeoutResult()), VALIDATE_KILL_GRACE_MS)
           }
         }, validateTimeoutMs)
         proc.on('exit', (code: number | null) => {
-          finish(
-            timedOut
-              ? timeoutResult()
-              : { valid: code === 0, message: out.trim() },
-          )
+          finish(timedOut ? timeoutResult() : { valid: code === 0, message: out.trim() })
         })
         proc.on('error', (err: Error) => {
-          finish(
-            timedOut ? timeoutResult() : { valid: false, message: err.message },
-          )
+          finish(timedOut ? timeoutResult() : { valid: false, message: err.message })
         })
       })
     },

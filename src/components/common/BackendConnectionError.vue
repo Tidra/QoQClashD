@@ -25,6 +25,14 @@
               {{ url }}
             </div>
           </div>
+          <!-- 内核停着时,启动入口在设置页 —— 弹窗必须留出口,否则永远到不了那里 -->
+          <button
+            class="btn btn-ghost btn-sm btn-square -mt-1 -mr-2 h-7 w-7"
+            :aria-label="$t('close')"
+            @click="dismiss"
+          >
+            <XMarkIcon class="h-4 w-4" />
+          </button>
         </div>
 
         <div class="bg-error/10 text-error rounded-lg px-3 py-2 text-xs leading-5 break-all">
@@ -32,8 +40,22 @@
         </div>
 
         <div class="flex gap-2">
+          <!-- 内置内核停着时,「修改后端配置」是条歧路 —— 正解是启动内核,
+               或者跳到设置页的内核管理卡片里处理。 -->
           <button
+            v-if="isManagedKernel"
             class="btn btn-primary btn-sm flex-1"
+            :disabled="startingKernel || isRetrying"
+            @click="startKernel"
+          >
+            <span
+              v-if="startingKernel"
+              class="loading loading-spinner loading-xs"
+            ></span>
+            {{ $t('kernelStartAction') }}
+          </button>
+          <button
+            :class="['btn btn-sm flex-1', isManagedKernel ? '' : 'btn-primary']"
             :disabled="isRetrying"
             @click="retry"
           >
@@ -44,6 +66,7 @@
             {{ isRetrying ? $t('backendConnecting') : $t('retry') }}
           </button>
           <button
+            v-if="!isManagedKernel"
             class="btn btn-sm flex-1"
             @click="editActiveBackend"
           >
@@ -81,6 +104,14 @@
         </template>
 
         <button
+          v-if="isManagedKernel"
+          class="btn btn-ghost btn-sm"
+          @click="gotoKernelSettings"
+        >
+          {{ $t('kernelSettingsEntry') }}
+        </button>
+        <button
+          v-else
           class="btn btn-ghost btn-sm"
           @click="openBackendManager()"
         >
@@ -96,8 +127,10 @@ import { probeBackend } from '@/assembly/backend'
 import { startBackendSession } from '@/assembly/session'
 import { backendProbe } from '@/assembly/version'
 import { ROUTE_NAME } from '@/constant'
+import { startKernelAndReconnect } from '@/composables/useKernelBackend'
 import { describeConnectionError } from '@/helper/connectivity'
 import { showNotification } from '@/helper/notification'
+import { notifyRequestError } from '@/helper/requestError'
 import { getBackendProbeUrl, getLabelFromBackend } from '@/helper/utils'
 import {
   activeBackend,
@@ -107,9 +140,14 @@ import {
   openBackendManager,
   setActiveBackend,
 } from '@/store/setup'
-import { ChevronRightIcon, ExclamationTriangleIcon, ServerIcon } from '@heroicons/vue/24/outline'
+import {
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
+  ServerIcon,
+  XMarkIcon,
+} from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const AUTO_SWITCH_TIMEOUT = 8000
 
@@ -126,11 +164,18 @@ const isRetrying = computed(() => probe.value?.status === 'probing')
 // probing,若跟着它走,页面会先整个消失再弹回来,像是自己好了。
 const failed = ref(false)
 
+// 手动收起后不再挡路(比如要去设置页启动内核);连上或换后端时恢复。
+const dismissed = ref(false)
+const dismiss = () => (dismissed.value = true)
+
 watch(
   () => probe.value?.status,
   (status) => {
     if (status === 'failed') failed.value = true
-    if (status === 'connected' || status === undefined) failed.value = false
+    if (status === 'connected' || status === undefined) {
+      failed.value = false
+      dismissed.value = false
+    }
   },
   { immediate: true },
 )
@@ -139,11 +184,40 @@ watch(
 // Setup 页本来就是登录后端的地方,不必再盖一层。
 const route = useRoute()
 const visible = computed(
-  () => failed.value && backendManagerView.value === null && route.name !== ROUTE_NAME.setup,
+  () =>
+    failed.value &&
+    !dismissed.value &&
+    backendManagerView.value === null &&
+    route.name !== ROUTE_NAME.setup,
 )
 
 const label = computed(() => (activeBackend.value ? getLabelFromBackend(activeBackend.value) : ''))
 const url = computed(() => (activeBackend.value ? getBackendProbeUrl(activeBackend.value) : ''))
+
+// 当前后端是面板自己托管的内置内核:失败多半只是内核没在跑,
+// 给「启动内核」和设置页入口,而不是让人去改一份本来就不该手改的配置。
+const router = useRouter()
+const isManagedKernel = computed(() => !!activeBackend.value?.managedKernel)
+const startingKernel = ref(false)
+
+const startKernel = async () => {
+  if (startingKernel.value) return
+  startingKernel.value = true
+  try {
+    if (!(await startKernelAndReconnect())) {
+      showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
+    }
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    startingKernel.value = false
+  }
+}
+
+const gotoKernelSettings = () => {
+  dismiss()
+  router.push({ name: ROUTE_NAME.settings, query: { section: 'backendSettings' } })
+}
 
 const otherBackends = computed(() =>
   backendList.value.filter((backend) => backend.uuid !== activeUuid.value),

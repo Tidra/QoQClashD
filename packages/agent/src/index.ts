@@ -1,30 +1,30 @@
-import type { ScriptRunner } from './script'
-import type { CreateSupervisorOptions } from './supervisor'
-import type {
-  KernelState,
-  KernelManager,
-  SystemProxyController,
-  TunController,
-} from './types'
 import { existsSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { createControlRouter } from './http'
-import { MIHOMO_VERSION } from './kernel/assets'
+import { MIHOMO_VERSION, mihomoAsset } from './kernel/assets'
 import { fetchKernel } from './kernel/fetch-kernel'
 import { createProfileConfigEditor } from './profile-editor'
 import { createProfileStore } from './profiles'
 import { applyActiveRefresh } from './refresh-apply'
 import { createProfileScheduler } from './scheduler'
+import type { ScriptRunner } from './script'
 import { createScriptRunner } from './script'
-import { createSupervisor } from './supervisor'
 import { createAgentStorage } from './storage'
+import type { CreateSupervisorOptions } from './supervisor'
+import { createSupervisor } from './supervisor'
+import type {
+  EnsureKernelOptions,
+  KernelManager,
+  KernelState,
+  SystemProxyController,
+  TunController,
+} from './types'
 
 export const AGENT_VERSION = '0.0.0'
 
 export { createControlRouter } from './http'
 export type { ControlRouterDeps } from './http'
-export { MIHOMO_VERSION, mihomoAsset } from './kernel/assets'
+export { applyMirror, KERNEL_MIRRORS, MIHOMO_VERSION, mihomoAsset } from './kernel/assets'
 export { fetchKernel, listMihomoVersions } from './kernel/fetch-kernel'
 export { fetchGeoAssets, GEO_ASSET_URLS } from './kernel/geo'
 export { mergeConfigs } from './merge'
@@ -43,17 +43,9 @@ export type {
 export { createProfileStore } from './profiles'
 export { applyActiveRefresh } from './refresh-apply'
 export { createProfileScheduler } from './scheduler'
-export type {
-  ProfileRefreshResult,
-  ProfileScheduler,
-  ProfileSchedulerDeps,
-} from './scheduler'
+export type { ProfileRefreshResult, ProfileScheduler, ProfileSchedulerDeps } from './scheduler'
 export { createScriptRunner } from './script'
-export type {
-  CreateScriptRunnerOptions,
-  ScriptRun,
-  ScriptRunner,
-} from './script'
+export type { CreateScriptRunnerOptions, ScriptRun, ScriptRunner } from './script'
 export { createSupervisor } from './supervisor'
 export type { CreateSupervisorOptions, SupervisorDeps } from './supervisor'
 export { buildTunConfig, TunPreconditionError } from './tun'
@@ -157,6 +149,7 @@ export function createAgent(opts: CreateAgentOptions) {
   const storage = createAgentStorage(dataDir, {
     'setup/panel-password': opts.agentToken ?? '',
     'config/core-storage-dir': initialLayout.kernelDir,
+    'config/config-dir': initialLayout.configDir,
     'config/runtime-root': persistedRoot,
   })
   let supervisor = createSupervisor({
@@ -171,8 +164,31 @@ export function createAgent(opts: CreateAgentOptions) {
     homeDir: runtimeConfigDir,
   })
 
-  const ensureKernel = async () => {
-    if (binaryPath && existsSync(binaryPath)) {
+  // 显式版本必须是受支持的 release tag；非法值静默回落到 MIHOMO_VERSION。
+  const kernelVersionRe = /^v\d+(?:\.\d+)*(?:-[\w.]+)?$/
+
+  // KV 里由 agent 自己写入的值统一用 JSON 编码（前端 useStorage 同约定）。
+  const KV = {
+    kernelDir: 'config/core-storage-dir',
+    configDir: 'config/config-dir',
+    installedVersion: 'config/kernel-installed-version',
+  } as const
+  const readKvString = async (key: string) => {
+    const raw = await storage.get(key)
+    if (raw == null) return undefined
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      return typeof parsed === 'string' && parsed.trim() ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  const ensureKernel = async (options: EnsureKernelOptions = {}) => {
+    const version =
+      options.version && kernelVersionRe.test(options.version) ? options.version : undefined
+    // force / 指定版本时即使二进制已存在也重新下载，实现“更新内核”。
+    if (!options.force && !version && binaryPath && existsSync(binaryPath)) {
       supervisor.setBinaryPath(binaryPath)
       const state = supervisor.getState()
       if (state.status !== 'running') {
@@ -187,13 +203,14 @@ export function createAgent(opts: CreateAgentOptions) {
       return { ok: true, path: binaryPath, started: false, status: state }
     }
 
-    const { binPath } = await fetchKernel(
-      process.platform,
-      process.arch,
-      runtimeKernelDir,
-    )
+    const { binPath } = await fetchKernel(process.platform, process.arch, runtimeKernelDir, {
+      ...(version ? { version } : {}),
+      ...(options.mirror ? { mirror: options.mirror } : {}),
+    })
     binaryPath = binPath
     supervisor.setBinaryPath(binPath)
+    // 记录本次安装的 release tag，供设置页判断“已是最新 / 可更新”。
+    await storage.set(KV.installedVersion, JSON.stringify(version ?? MIHOMO_VERSION))
     let started: KernelState
     let startError: string | undefined
     try {
@@ -219,6 +236,78 @@ export function createAgent(opts: CreateAgentOptions) {
     profiles: runtimeProfilesDir,
     activeConfig: runtimeActiveConfigPath,
   })
+
+  // Swap the in-memory layout + push it into the long-lived components (the
+  // router is captured once by the server, so nothing here is ever recreated).
+  const pointRuntimePaths = (patch: { kernelDir?: string; configDir?: string }) => {
+    if (patch.kernelDir) {
+      runtimeKernelDir = patch.kernelDir
+      const candidate = join(patch.kernelDir, mihomoAsset(process.platform, process.arch).binName)
+      if (existsSync(candidate)) {
+        binaryPath = candidate
+        supervisor.setBinaryPath(candidate)
+      }
+    }
+    if (patch.configDir) {
+      runtimeConfigDir = patch.configDir
+      runtimeActiveConfigPath = join(patch.configDir, 'active.yaml')
+      supervisor.setPaths({
+        homeDir: patch.configDir,
+        activeConfigPath: runtimeActiveConfigPath,
+      })
+      profiles.setActiveConfigPath(runtimeActiveConfigPath)
+      profileEditor.setHomeDir(patch.configDir)
+    }
+  }
+
+  const applyRuntimePaths = async (patch: { kernelDir?: string; configDir?: string }) => {
+    const kernelDir = patch.kernelDir?.trim()
+    const configDir = patch.configDir?.trim()
+    if (!kernelDir && !configDir) {
+      return { ok: false, error: 'kernelDir or configDir is required', ...runtime() }
+    }
+    for (const dir of [kernelDir, configDir]) {
+      if (dir && !isAbsolute(dir)) {
+        return { ok: false, error: 'paths must be absolute', ...runtime() }
+      }
+    }
+    if (kernelDir) {
+      mkdirSync(kernelDir, { recursive: true })
+      await storage.set(KV.kernelDir, JSON.stringify(kernelDir))
+    }
+    if (configDir) {
+      mkdirSync(configDir, { recursive: true })
+      await storage.set(KV.configDir, JSON.stringify(configDir))
+    }
+    pointRuntimePaths({
+      ...(kernelDir ? { kernelDir } : {}),
+      ...(configDir ? { configDir } : {}),
+    })
+    return { ok: true, ...runtime() }
+  }
+
+  const kernelStatusExtras = async () => {
+    const installedVersion = await readKvString(KV.installedVersion)
+    return {
+      binaryExists: existsSync(binaryPath),
+      ...(installedVersion ? { installedVersion } : {}),
+    }
+  }
+
+  // 启动时应用设置页持久化过的目录（server 在 listen 前 await）。
+  const init = async () => {
+    const [kernelDir, configDir] = await Promise.all([
+      readKvString(KV.kernelDir),
+      readKvString(KV.configDir),
+    ])
+    const patch: { kernelDir?: string; configDir?: string } = {}
+    if (kernelDir && kernelDir !== runtimeKernelDir) patch.kernelDir = kernelDir
+    if (configDir && configDir !== runtimeConfigDir) patch.configDir = configDir
+    if (patch.kernelDir) mkdirSync(patch.kernelDir, { recursive: true })
+    if (patch.configDir) mkdirSync(patch.configDir, { recursive: true })
+    if (patch.kernelDir || patch.configDir) pointRuntimePaths(patch)
+  }
+
   const info = (): AgentInfo => ({
     hasAgent: true,
     version: AGENT_VERSION,
@@ -249,13 +338,21 @@ export function createAgent(opts: CreateAgentOptions) {
     profiles,
     profileEditor,
     info,
-    homeDir: runtimeConfigDir,
-    activeConfigPath: runtimeActiveConfigPath,
+    // Getters, not snapshots: applyRuntimePaths relocates these while the
+    // router instance stays alive (the server captures it once).
+    get homeDir() {
+      return runtimeConfigDir
+    },
+    get activeConfigPath() {
+      return runtimeActiveConfigPath
+    },
     token: opts.agentToken,
     systemProxy,
     kernelManager,
     tunController,
     ensureKernel,
+    applyRuntimePaths,
+    kernelStatusExtras,
     storage,
   })
 
@@ -317,6 +414,7 @@ export function createAgent(opts: CreateAgentOptions) {
     profileEditor,
     router,
     info,
+    init,
     scheduler,
     systemProxy,
     kernelManager,

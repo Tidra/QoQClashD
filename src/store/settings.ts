@@ -196,7 +196,6 @@ export const emoji = useStorage<EMOJIS>(
 export const customBackgroundURL = useStorage('config/custom-background-image', '')
 export const customCSS = useStorage('config/custom-css', '')
 export const dashboardTransparent = useStorage('config/dashboard-transparent', 90)
-export const autoUpgradeDashboard = useStorage('config/auto-upgrade', false)
 export const checkUpgradeCore = useStorage('config/check-upgrade-core', true)
 export const autoUpgradeCore = useStorage('config/auto-upgrade-core', false)
 export const swipeInPages = useStorage('config/swipe-in-pages', true)

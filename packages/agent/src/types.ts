@@ -1,5 +1,4 @@
-export type KernelStatus =
-  'stopped' | 'starting' | 'running' | 'stopping' | 'errored'
+export type KernelStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'errored'
 
 export interface KernelState {
   status: KernelStatus
@@ -10,6 +9,13 @@ export interface KernelState {
   secret: string // Clash API secret (also written into config)
   lastExitCode?: number | null
   lastError?: string
+}
+
+/** POST /kernel/ensure 请求体：mirror=KERNEL_MIRRORS 键，version=release tag，force=已存在也重新下载。 */
+export interface EnsureKernelOptions {
+  mirror?: string
+  version?: string
+  force?: boolean
 }
 
 export interface SupervisorOptions {
@@ -37,6 +43,9 @@ export interface MihomoSupervisor {
   stop: () => Promise<KernelState>
   restart: () => Promise<KernelState>
   setBinaryPath: (path: string) => void // takes effect on the NEXT start/validate
+  // Relocate the -d home dir and/or the -f active config; like setBinaryPath,
+  // effective on the NEXT start/validate spawn (the running process keeps its paths).
+  setPaths: (patch: { homeDir?: string; activeConfigPath?: string }) => void
   validate: (configPath: string) => Promise<{ valid: boolean; message: string }>
   on: ((event: 'log', cb: (l: KernelLogLine) => void) => void) &
     ((event: 'state', cb: (s: KernelState) => void) => void)
@@ -149,6 +158,9 @@ export interface ProfileStore {
   refresh: (id: string) => Promise<ProfileMeta> // re-fetch a remote profile in place
   getActiveId: () => Promise<string | undefined>
   setActive: (id: string) => Promise<void> // validate + write activeConfigPath
+  // Point the store at a new active-config file (config dir relocated at
+  // runtime); subsequent setActive/rollback/resetActive use the new path.
+  setActiveConfigPath: (path: string) => void
   // Compose a base with its enabled merge/script layers. Overrides are used by
   // the visual editor to preview without mutating disk.
   compose: (

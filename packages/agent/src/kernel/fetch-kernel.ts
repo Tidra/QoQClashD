@@ -2,13 +2,15 @@ import { Buffer } from 'node:buffer'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { MIHOMO_VERSION, mihomoAsset } from './assets'
+import { MIHOMO_VERSION, applyMirror, mihomoAsset } from './assets'
 import { unzipEntry as defaultUnzipEntry } from './unzip-entry'
 
 export interface FetchKernelDeps {
   fetch?: typeof fetch
   /** mihomo release tag to download; defaults to MIHOMO_VERSION. */
   version?: string
+  /** KERNEL_MIRRORS whitelist key; unknown/omitted falls back to direct. */
+  mirror?: string
   /**
    * Extract a single entry from a .zip buffer. Injected in tests; the default
    * shells out to the platform's unzip and is covered by MANUAL smoke testing.
@@ -25,12 +27,11 @@ export async function fetchKernel(
   const doFetch = deps.fetch ?? fetch
   const unzipEntry = deps.unzipEntry ?? defaultUnzipEntry
   const asset = mihomoAsset(os, arch, deps.version ?? MIHOMO_VERSION)
+  const url = applyMirror(asset.url, deps.mirror)
 
-  const res = await doFetch(asset.url)
+  const res = await doFetch(url)
   if (!res.ok) {
-    throw new Error(
-      `fetchKernel: download failed ${res.status} for ${asset.url}`,
-    )
+    throw new Error(`fetchKernel: download failed ${res.status} for ${url}`)
   }
   const downloaded = Buffer.from(await res.arrayBuffer())
 
@@ -66,10 +67,7 @@ function isAsciiDigits(value: string): boolean {
 function isVersionTag(tag: string): boolean {
   if (!tag.startsWith('v')) return false
   const prereleaseIndex = tag.indexOf('-')
-  const core = tag.slice(
-    1,
-    prereleaseIndex === -1 ? undefined : prereleaseIndex,
-  )
+  const core = tag.slice(1, prereleaseIndex === -1 ? undefined : prereleaseIndex)
   const parts = core.split('.')
   return parts.length >= 2 && parts.every(isAsciiDigits)
 }
@@ -120,9 +118,7 @@ export async function listMihomoVersions(
     headers,
   })
   if (!res.ok) {
-    throw new Error(
-      `listMihomoVersions: failed ${res.status} for ${RELEASES_URL}`,
-    )
+    throw new Error(`listMihomoVersions: failed ${res.status} for ${RELEASES_URL}`)
   }
   const releases = (await res.json()) as GithubRelease[]
   return releases

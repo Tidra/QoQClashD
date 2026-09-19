@@ -1,18 +1,5 @@
 import type { ConfigPatchV1 } from '@metacubexd/config-editor'
 import type { App, H3Event } from 'h3'
-import type { ProfileConfigEditor } from './profile-editor'
-import type {
-  KernelLogLine,
-  KernelManager,
-  KernelState,
-  MihomoSupervisor,
-  ProfileStore,
-  SystemProxyController,
-  TunController,
-} from './types'
-import type { AgentStorage } from './storage'
-import { readFile as defaultReadFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import {
   createApp,
   createError,
@@ -27,21 +14,32 @@ import {
   setResponseHeader,
   setResponseStatus,
 } from 'h3'
+import { readFile as defaultReadFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { KERNEL_MIRRORS } from './kernel/assets'
+import { listMihomoVersions } from './kernel/fetch-kernel'
 import { fetchGeoAssets } from './kernel/geo'
 import { ConfigPatchConflictError } from './merge'
-import {
-  ProfileEditorConflictError,
-  ProfileEditorValidationError,
-} from './profile-editor'
+import type { ProfileConfigEditor } from './profile-editor'
+import { ProfileEditorConflictError, ProfileEditorValidationError } from './profile-editor'
 import { SubscriptionFetchError } from './profiles'
+import type { AgentStorage } from './storage'
 import { TunPreconditionError } from './tun'
+import type {
+  EnsureKernelOptions,
+  KernelLogLine,
+  KernelManager,
+  KernelState,
+  MihomoSupervisor,
+  ProfileStore,
+  SystemProxyController,
+  TunController,
+} from './types'
 import { createWebdavClient as defaultCreateWebdavClient } from './webdav'
 
 const BACKUP_FILENAME = 'metacubexd-backup.json'
 
-async function withSubscriptionHttpError<T>(
-  action: () => Promise<T>,
-): Promise<T> {
+async function withSubscriptionHttpError<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action()
   } catch (error) {
@@ -69,13 +67,15 @@ export interface ControlRouterDeps {
   profiles: ProfileStore
   profileEditor?: ProfileConfigEditor // capability-gated visual profile editor
   info: () => unknown
+  // Read at REQUEST time (deps.homeDir), never destructured: applyRuntimePaths
+  // relocates these while the router instance stays alive.
   homeDir: string // writable dir for materializing validate candidate files
   activeConfigPath: string // file the kernel runs with -f (supervisor-injected at spawn)
   token?: string
   systemProxy?: SystemProxyController // OS proxy controller; capability-gated
   kernelManager?: KernelManager // kernel version mgmt; capability-gated
   tunController?: TunController // TUN mode controller; capability-gated
-  ensureKernel?: () => Promise<{
+  ensureKernel?: (options?: EnsureKernelOptions) => Promise<{
     ok: boolean
     path?: string
     started?: boolean
@@ -89,6 +89,24 @@ export interface ControlRouterDeps {
     config: string
     profiles: string
     activeConfig: string
+  }>
+  // Relocate the kernel binary dir and/or the config (home/active.yaml) dir at
+  // runtime; persists the choice and echoes the new runtime layout.
+  applyRuntimePaths?: (patch: { kernelDir?: string; configDir?: string }) => Promise<{
+    ok: boolean
+    error?: string
+    root: string
+    kernel: string
+    config: string
+    profiles: string
+    activeConfig: string
+  }>
+  // Merged into GET /kernel/status: whether the binary file exists on disk and
+  // which release tag was last installed (both live in the agent, not the
+  // supervisor state).
+  kernelStatusExtras?: () => Promise<{
+    binaryExists: boolean
+    installedVersion?: string
   }>
   geoFetch?: typeof fetch // override for tests; defaults to global fetch
   createWebdavClient?: typeof defaultCreateWebdavClient // override for tests
@@ -106,8 +124,6 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     profiles,
     profileEditor,
     info,
-    homeDir,
-    activeConfigPath,
     token,
     systemProxy,
     kernelManager,
@@ -154,7 +170,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   )
   router.get(
     `${PREFIX}/runtime`,
-    defineEventHandler(() => info().runtime),
+    defineEventHandler(() => (info() as { runtime: unknown }).runtime),
   )
   router.get(
     `${PREFIX}/storage/kv`,
@@ -168,7 +184,8 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   router.put(
     `${PREFIX}/storage/kv`,
     defineEventHandler(async (event) => {
-      if (!deps.storage) throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
+      if (!deps.storage)
+        throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
       const body = (await readBody(event)) as { key?: string; value?: string }
       if (!body.key || typeof body.value !== 'string') {
         throw createError({ statusCode: 400, statusMessage: 'key and value are required' })
@@ -180,7 +197,8 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   router.delete(
     `${PREFIX}/storage/kv`,
     defineEventHandler(async (event) => {
-      if (!deps.storage) throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
+      if (!deps.storage)
+        throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
       const key = String(getQuery(event).key || '')
       if (!key) throw createError({ statusCode: 400, statusMessage: 'key is required' })
       await deps.storage.delete(key)
@@ -200,11 +218,35 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       return deps.setRuntimeRoot(body.root || '')
     }),
   )
+  // Relocate kernel storage / config dirs from the settings page. Paths take
+  // effect on the NEXT kernel start (the live process keeps its own paths).
+  router.put(
+    `${PREFIX}/runtime/paths`,
+    defineEventHandler(async (event) => {
+      if (!deps.applyRuntimePaths) {
+        return {
+          ok: false,
+          error: 'runtime path configuration is unavailable',
+        }
+      }
+      const body = (await readBody(event).catch(() => ({}))) as {
+        kernelDir?: string
+        configDir?: string
+      }
+      const patch: { kernelDir?: string; configDir?: string } = {}
+      if (typeof body?.kernelDir === 'string') patch.kernelDir = body.kernelDir
+      if (typeof body?.configDir === 'string') patch.configDir = body.configDir
+      return deps.applyRuntimePaths(patch)
+    }),
+  )
 
   // ---- Kernel ----
   router.get(
     `${PREFIX}/kernel/status`,
-    defineEventHandler((): KernelState => supervisor.getState()),
+    defineEventHandler(async () => ({
+      ...supervisor.getState(),
+      ...(await deps.kernelStatusExtras?.()),
+    })),
   )
   router.post(
     `${PREFIX}/kernel/start`,
@@ -220,14 +262,39 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   )
   router.post(
     `${PREFIX}/kernel/ensure`,
-    defineEventHandler(async () => {
+    defineEventHandler(async (event) => {
       if (!deps.ensureKernel) {
         return {
           ok: false,
           error: 'kernel bootstrap is unavailable',
         }
       }
-      return deps.ensureKernel()
+      const body = (await readBody(event).catch(() => ({}))) as EnsureKernelOptions
+      return deps.ensureKernel({
+        ...(typeof body?.mirror === 'string' ? { mirror: body.mirror } : {}),
+        ...(typeof body?.version === 'string' ? { version: body.version } : {}),
+        ...(body?.force === true ? { force: true } : {}),
+      })
+    }),
+  )
+  // Available mihomo release tags (newest first) + whitelisted download
+  // mirrors, for the settings-page kernel manager. Network failures degrade to
+  // an empty list rather than a 500 so the UI keeps its pinned default.
+  router.get(
+    `${PREFIX}/kernel/releases`,
+    defineEventHandler(async () => {
+      const mirrors = Object.keys(KERNEL_MIRRORS)
+      try {
+        const versions = await listMihomoVersions({ fetch: geoFetch })
+        return { ok: true, versions, mirrors }
+      } catch (error) {
+        return {
+          ok: false,
+          versions: [],
+          mirrors,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
     }),
   )
   // Restore the last-known-good active config (the .bak snapshot written by the
@@ -261,10 +328,8 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     `${PREFIX}/kernel/logs`,
     defineEventHandler((event) => {
       const stream = createEventStream(event)
-      const onLog = (l: KernelLogLine) =>
-        stream.push(JSON.stringify({ type: 'log', ...l }))
-      const onState = (s: KernelState) =>
-        stream.push(JSON.stringify({ type: 'state', ...s }))
+      const onLog = (l: KernelLogLine) => stream.push(JSON.stringify({ type: 'log', ...l }))
+      const onState = (s: KernelState) => stream.push(JSON.stringify({ type: 'state', ...s }))
       supervisor.on('log', onLog)
       supervisor.on('state', onState)
       // Detach on disconnect. Without this, every EventSource reconnect
@@ -300,7 +365,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       }
       throw error
     }
-    const validation = await supervisor.validate(activeConfigPath)
+    const validation = await supervisor.validate(deps.activeConfigPath)
     if (validation.valid) return supervisor.restart()
     if (previousActiveId && previousActiveId !== id) {
       // Re-compose the previously-active profile (best-effort — a failure here
@@ -326,10 +391,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   router.get(
     `${PREFIX}/profiles`,
     defineEventHandler(async () => {
-      const [list, activeId] = await Promise.all([
-        profiles.list(),
-        profiles.getActiveId(),
-      ])
+      const [list, activeId] = await Promise.all([profiles.list(), profiles.getActiveId()])
       return list.map((p) => ({ ...p, active: p.id === activeId }))
     }),
   )
@@ -398,9 +460,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     `${PREFIX}/profiles/import`,
     defineEventHandler(async (event) => {
       const body = (await readBody(event)) as { url: string; name?: string }
-      return withSubscriptionHttpError(() =>
-        profiles.importFromUrl(body.url, body.name),
-      )
+      return withSubscriptionHttpError(() => profiles.importFromUrl(body.url, body.name))
     }),
   )
   router.post(
@@ -441,7 +501,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       const content = await profiles.read(id)
       // Materialize a temp candidate file so `mihomo -t -f <path>` runs against a
       // real config (the route carries no body — the id is the source of truth).
-      const candidate = join(homeDir, `.validate-${id}.yaml`)
+      const candidate = join(deps.homeDir, `.validate-${id}.yaml`)
       await writeFile(candidate, content)
       try {
         return await supervisor.validate(candidate)
@@ -516,9 +576,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       `${PREFIX}/profiles/:id/editor/overlay`,
       defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id')!
-        const kernel = await withEditorError(() =>
-          profileEditor.resetManagedOverlay(id),
-        )
+        const kernel = await withEditorError(() => profileEditor.resetManagedOverlay(id))
         return kernel ?? { ok: true }
       }),
     )
@@ -557,7 +615,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     defineEventHandler(async (event) => {
       setResponseHeader(event, 'content-type', 'text/yaml')
       try {
-        return await readFile(activeConfigPath, 'utf8')
+        return await readFile(deps.activeConfigPath, 'utf8')
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return ''
         throw err
@@ -610,7 +668,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   router.post(
     `${PREFIX}/geo/update`,
     defineEventHandler(async () => {
-      const { files } = await fetchGeoAssets(homeDir, { fetch: geoFetch })
+      const { files } = await fetchGeoAssets(deps.homeDir, { fetch: geoFetch })
       return { ok: true, files }
     }),
   )
@@ -647,9 +705,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       const bundle = {
         version: 1 as const,
         profiles: bundleProfiles,
-        ...(body.uiSettings !== undefined
-          ? { uiSettings: body.uiSettings }
-          : {}),
+        ...(body.uiSettings !== undefined ? { uiSettings: body.uiSettings } : {}),
       }
       // Best-effort directory creation — ignore "already exists" / transient errors
       // so an existing collection doesn't fail the upload.
@@ -702,10 +758,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
         // Preserve composition types (merge/script) so restored overlays/scripts
         // still apply; 'remote' is intentionally restored as 'local' (keep the
         // captured content, no network re-fetch).
-        const type =
-          p.meta.type === 'merge' || p.meta.type === 'script'
-            ? p.meta.type
-            : 'local'
+        const type = p.meta.type === 'merge' || p.meta.type === 'script' ? p.meta.type : 'local'
         const mappedBaseId = p.meta.baseProfileId
           ? restoredIds.get(p.meta.baseProfileId)
           : undefined

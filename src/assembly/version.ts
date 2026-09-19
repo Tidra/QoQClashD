@@ -1,12 +1,12 @@
 // 组装层 · 版本与升级。
 // 版本字符串是 core 轴(assembly/backend.ts)的唯一来源:这里探测完成后写入 core,
 // 后端切换的瞬间先重置为 'unknown',避免沿用上一个后端的结论。
-import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI, upgradeUIAPI } from '@/api/clash'
+import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI } from '@/api/clash'
 import HonkLogo from '@/assets/images/honk.svg'
 import MetacubexLogo from '@/assets/images/metacubex.jpg'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { getRequestErrorMessage } from '@/helper/requestError'
-import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
+import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import type { Backend } from '@/types'
 import { computed, nextTick, ref } from 'vue'
@@ -14,7 +14,6 @@ import { can, core, Core, resetCore } from './backend'
 
 export const version = ref()
 export const isCoreUpdateAvailable = ref(false)
-export const zashboardVersion = ref(__APP_VERSION__)
 
 // 切后端时本来就要打一次 /version,顺手把它的结果暴露成连通性状态,
 // 给切换提示用 —— 不额外发探测请求,量的也正是实际在用的那条 API。
@@ -175,15 +174,6 @@ async function fetchWithLocalCache<T>(url: string, version: string): Promise<T> 
   return data
 }
 
-export const fetchIsUIUpdateAvailable = async () => {
-  const { tag_name } = await fetchWithLocalCache<{ tag_name: string }>(
-    'https://api.github.com/repos/Zephyruso/zashboard/releases/latest',
-    zashboardVersion.value,
-  )
-
-  return Boolean(tag_name && tag_name !== `v${zashboardVersion.value}`)
-}
-
 const check = async (url: string, versionNumber: string) => {
   const { assets } = await fetchWithLocalCache<{ assets: { name: string }[] }>(url, versionNumber)
   const alreadyLatest = assets.some(({ name }) => name.includes(versionNumber))
@@ -198,16 +188,5 @@ export const fetchBackendUpdateAvailableAPI = async () => {
   )
 }
 
-// 仪表盘(UI)更新检查,迁自 composables/settings.ts 的 useSettings。
-export const isUIUpdateAvailable = ref(false)
-
-export const checkUIUpdate = async () => {
-  isUIUpdateAvailable.value = await fetchIsUIUpdateAvailable()
-  if (isUIUpdateAvailable.value && autoUpgradeDashboard.value) {
-    // 自动升级不是用户点的,失败静默
-    upgradeUIAPI().catch(() => {})
-  }
-}
-
-// 内核 / UI 维护动作(Clash 专属,无后端分支),经版本域门面暴露给 view。
-export { restartCoreAPI, upgradeCoreAPI, upgradeUIAPI }
+// 内核维护动作(Clash 专属,无后端分支),经版本域门面暴露给 view。
+export { restartCoreAPI, upgradeCoreAPI }

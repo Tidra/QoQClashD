@@ -1,11 +1,11 @@
-import type { MihomoSupervisor } from './types'
+import { diffDocument } from '@metacubexd/config-editor'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { diffDocument } from '@metacubexd/config-editor'
 import { describe, expect, it, vi } from 'vitest'
 import { createProfileConfigEditor } from './profile-editor'
 import { createProfileStore } from './profiles'
+import type { MihomoSupervisor } from './types'
 
 function state() {
   return {
@@ -22,6 +22,7 @@ function supervisor(restart = vi.fn(async () => state())): MihomoSupervisor {
     stop: vi.fn(async () => state()),
     restart,
     setBinaryPath: vi.fn(),
+    setPaths: vi.fn(),
     validate: vi.fn(async () => ({ valid: true, message: 'ok' })),
     on: vi.fn(),
     off: vi.fn(),
@@ -89,9 +90,7 @@ describe('profile config editor', () => {
     await editor.apply('id1', diffDocument(opened.editableYaml, draft))
 
     expect(await profiles.read('id1')).toBe(remote)
-    const overlays = (await profiles.list()).filter(
-      (meta) => meta.type === 'merge',
-    )
+    const overlays = (await profiles.list()).filter((meta) => meta.type === 'merge')
     expect(overlays).toEqual([
       expect.objectContaining({
         baseProfileId: 'id1',
@@ -109,14 +108,10 @@ describe('profile config editor', () => {
     expect(conflicted.profile.editorStatus).toBe('conflicted')
     expect(conflicted.conflicts).toHaveLength(1)
     expect(conflicted.conflicts[0]?.reason).toBe('changed')
-    expect(readFileSync(join(home, 'active.yaml'), 'utf8')).toContain(
-      'type: reject',
-    )
+    expect(readFileSync(join(home, 'active.yaml'), 'utf8')).toContain('type: reject')
 
     await editor.resetManagedOverlay('id1')
-    expect(
-      (await profiles.list()).filter((meta) => meta.type === 'merge'),
-    ).toEqual([])
+    expect((await profiles.list()).filter((meta) => meta.type === 'merge')).toEqual([])
     expect((await profiles.compose('id1')).content).toContain('type: ss')
   })
 
@@ -173,10 +168,7 @@ describe('profile config editor', () => {
     const opened = await editor.open('local')
 
     await expect(
-      editor.apply(
-        'local',
-        diffDocument(opened.editableYaml, 'mode: global\n'),
-      ),
+      editor.apply('local', diffDocument(opened.editableYaml, 'mode: global\n')),
     ).rejects.toThrow('invalid configuration')
     expect(await profiles.read('local')).toBe('mode: rule\n')
     expect(await profiles.getActiveId()).toBe('local')
@@ -191,9 +183,7 @@ describe('profile config editor', () => {
       dir: join(home, 'profiles'),
       activeConfigPath: join(home, 'active.yaml'),
       fetch: (async () =>
-        new Response(
-          'proxies:\n  - { name: node, type: direct }\n',
-        )) as typeof fetch,
+        new Response('proxies:\n  - { name: node, type: direct }\n')) as typeof fetch,
       idGen: () => `id${++sequence}`,
     })
     await profiles.importFromUrl('https://example.test/sub', 'remote')
@@ -205,14 +195,9 @@ describe('profile config editor', () => {
     const first = await firstEditor.open('id1')
     await firstEditor.apply(
       'id1',
-      diffDocument(
-        first.editableYaml,
-        'proxies:\n  - { name: node, type: reject }\n',
-      ),
+      diffDocument(first.editableYaml, 'proxies:\n  - { name: node, type: reject }\n'),
     )
-    const overlay = (await profiles.list()).find(
-      (meta) => meta.managedBy === 'visual-editor',
-    )!
+    const overlay = (await profiles.list()).find((meta) => meta.managedBy === 'visual-editor')!
     const originalOverlay = await profiles.read(overlay.id)
 
     const failingEditor = createProfileConfigEditor({
@@ -228,10 +213,7 @@ describe('profile config editor', () => {
     await expect(
       failingEditor.apply(
         'id1',
-        diffDocument(
-          opened.editableYaml,
-          'proxies:\n  - { name: node, type: pass }\n',
-        ),
+        diffDocument(opened.editableYaml, 'proxies:\n  - { name: node, type: pass }\n'),
       ),
     ).rejects.toThrow('restart failed')
 

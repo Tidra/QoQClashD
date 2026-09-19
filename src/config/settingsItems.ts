@@ -38,11 +38,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     description: 'settingsDescriptionBackend',
     items: [
       {
-        key: `${SETTINGS_MENU_KEY.backend}.backendSwitch`,
-        label: 'backend',
-        section: 'settingsSectionCurrentBackend',
-      },
-      {
         key: `${SETTINGS_MENU_KEY.backend}.upgradeCore`,
         label: 'upgradeCore',
         section: 'settingsSectionCoreOperations',
@@ -111,12 +106,12 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: `${SETTINGS_MENU_KEY.backend}.checkCoreUpgrade`,
         label: 'checkCoreUpgrade',
-        section: 'settingsSectionCoreUpdates',
+        section: 'settingsSectionKernelManager',
       },
       {
         key: `${SETTINGS_MENU_KEY.backend}.autoUpgradeCore`,
         label: 'autoUpgradeCore',
-        section: 'settingsSectionCoreUpdates',
+        section: 'settingsSectionKernelManager',
       },
     ],
   },
@@ -130,10 +125,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'actions',
         section: 'settingsSectionApplication',
         searchEntries: [
-          {
-            anchorKey: `${SETTINGS_MENU_KEY.general}.zashboardSettings.actions.upgradeDashboard`,
-            label: 'upgradeDashboard',
-          },
           {
             anchorKey: `${SETTINGS_MENU_KEY.general}.zashboardSettings.actions`,
             label: 'dashboardSettings',
@@ -189,11 +180,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.language`,
         label: 'language',
-        section: 'settingsSectionApplication',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgradeDashboard`,
-        label: 'autoUpgradeDashboard',
         section: 'settingsSectionApplication',
       },
       {

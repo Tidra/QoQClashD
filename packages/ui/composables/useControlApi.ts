@@ -26,6 +26,27 @@ const PROFILE_SUBSCRIPTION_TIMEOUT = 45_000
 const PROFILE_VALIDATE_TIMEOUT = 330_000
 const PROFILE_ACTIVATE_TIMEOUT = 360_000
 const PROFILE_REFRESH_AND_ACTIVATE_TIMEOUT = 390_000
+// Kernel downloads run through the agent over (mirrored) GitHub release URLs;
+// a slow mirror needs a generous finite budget, and the release listing hits
+// api.github.com server-side.
+const KERNEL_ENSURE_TIMEOUT = 390_000
+const KERNEL_RELEASES_TIMEOUT = 60_000
+
+export interface EnsureKernelBody {
+  /** KERNEL_MIRRORS whitelist key, e.g. 'direct' | 'gh-proxy'. */
+  mirror?: string
+  /** mihomo release tag, e.g. 'v1.19.27'. */
+  version?: string
+  /** true = re-download even if the binary already exists. */
+  force?: boolean
+}
+
+export interface KernelReleases {
+  ok: boolean
+  versions: string[]
+  mirrors: string[]
+  error?: string
+}
 
 export interface ControlConfig {
   base: string
@@ -51,9 +72,7 @@ export function resolveControlConfig(): ControlConfig {
     return { base: stripTrailingSlash(bridge.base), token: bridge.token }
   }
   const origin =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : ''
+    typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
   // All-in-One server mode: the dashboard is served same-origin with the agent,
   // and the server injects CONTROL_TOKEN into config.js so control unlocks
   // automatically (#2074). Plain static deploys leave controlToken undefined.
@@ -94,14 +113,41 @@ export function useControlApi() {
         profiles: string
         activeConfig: string
       }>(),
+    // Relocate kernel storage / config dirs at runtime (absolute paths). Takes
+    // effect on the NEXT kernel start; echoes the new runtime layout.
+    setRuntimePaths: (body: { kernelDir?: string; configDir?: string }) =>
+      client.put('runtime/paths', { json: body }).json<{
+        ok: boolean
+        error?: string
+        root: string
+        kernel: string
+        config: string
+        profiles: string
+        activeConfig: string
+      }>(),
     getKernelStatus: () => client.get('kernel/status').json<KernelState>(),
     startKernel: () => client.post('kernel/start').json<KernelState>(),
     stopKernel: () => client.post('kernel/stop').json<KernelState>(),
     restartKernel: () => client.post('kernel/restart').json<KernelState>(),
-    ensureKernel: () =>
+    // Download (or re-download with force) + start the kernel binary in the
+    // agent's kernel dir. Body is optional: omitted = ensure-defaults (direct
+    // URL, pinned version, no-op when the binary exists).
+    ensureKernel: (body?: EnsureKernelBody) =>
       client
-        .post('kernel/ensure')
-        .json<{ ok: boolean; path?: string; started?: boolean; status?: KernelState; error?: string }>(),
+        .post('kernel/ensure', {
+          json: body ?? {},
+          timeout: KERNEL_ENSURE_TIMEOUT,
+        })
+        .json<{
+          ok: boolean
+          path?: string
+          started?: boolean
+          status?: KernelState
+          error?: string
+        }>(),
+    // Installable mihomo release tags (newest first) + whitelisted mirrors.
+    getKernelReleases: () =>
+      client.get('kernel/releases', { timeout: KERNEL_RELEASES_TIMEOUT }).json<KernelReleases>(),
     // Restore the last-known-good active config (.bak from the previous
     // activate) and restart — escape hatch for a config that bricks the kernel
     // (#2109). 404s when no backup exists.
@@ -112,8 +158,7 @@ export function useControlApi() {
     // EventSource cannot send Authorization headers, so the SSE route also
     // accepts ?token= (SHARED CONTRACTS). Desktop in-process binding skips
     // auth, but passing the token there is harmless.
-    logsUrl: () =>
-      token ? `${base}/kernel/logs?token=${token}` : `${base}/kernel/logs`,
+    logsUrl: () => (token ? `${base}/kernel/logs?token=${token}` : `${base}/kernel/logs`),
 
     listProfiles: () => client.get('profiles').json<ProfileMeta[]>(),
     // `type: 'merge'` mints a YAML overlay profile (composed onto the active
@@ -124,8 +169,7 @@ export function useControlApi() {
       content?: string
       type?: 'local' | 'merge' | 'script'
     }) => client.post('profiles', { json: body }).json<ProfileMeta>(),
-    getProfile: (id: string) =>
-      client.get(`profiles/${id}`).json<ProfileDetail>(),
+    getProfile: (id: string) => client.get(`profiles/${id}`).json<ProfileDetail>(),
     updateProfile: (
       id: string,
       body: {
@@ -143,9 +187,7 @@ export function useControlApi() {
       await client.delete(`profiles/${id}`)
     },
     duplicateProfile: (id: string, name?: string) =>
-      client
-        .post(`profiles/${id}/duplicate`, { json: { name } })
-        .json<ProfileMeta>(),
+      client.post(`profiles/${id}/duplicate`, { json: { name } }).json<ProfileMeta>(),
     importProfile: (url: string, name?: string) =>
       client
         .post('profiles/import', {
@@ -218,8 +260,7 @@ export function useControlApi() {
     // Kernel version management (capability-gated 'kernel-version'). GET lists
     // the downloaded + bundled versions and the active one; POST { version }
     // downloads/persists/live-swaps it (the kernel restarts) and echoes { ok }.
-    getKernelVersions: () =>
-      client.get('kernel/versions').json<KernelVersions>(),
+    getKernelVersions: () => client.get('kernel/versions').json<KernelVersions>(),
     switchKernel: (version: string) =>
       client.post('kernel/switch', { json: { version } }).json<{ ok: true }>(),
 
@@ -244,11 +285,8 @@ export function useControlApi() {
     // `restart: false` persists the section to the active profile without
     // restarting the kernel — used when the change was already hot-applied via
     // PATCH /configs and only needs to survive the next restart (#2070).
-    setConfigSection: (body: {
-      key: string
-      value: unknown
-      restart?: boolean
-    }) => client.put('config/section', { json: body }).json<KernelState>(),
+    setConfigSection: (body: { key: string; value: unknown; restart?: boolean }) =>
+      client.put('config/section', { json: body }).json<KernelState>(),
 
     // WebDAV backup/restore (capability-gated 'webdav-backup'). Credentials are
     // sent per-request and never persisted by the agent. Backup ships every

@@ -1,10 +1,20 @@
-import { createReadStream, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
+import { createAgent } from '@metacubexd/agent'
+import { toNodeListener } from 'h3'
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { toNodeListener } from 'h3'
-import { createAgent } from '@metacubexd/agent'
 import { WebSocket, WebSocketServer } from 'ws'
 import { loadRuntimeConfig, normalizeExternalController } from './config.js'
 
@@ -36,7 +46,9 @@ const acquireDataLock = () => {
   const holder = Number(readFileSync(lockPath, 'utf8').trim())
   if (holder && holder !== process.pid && pidAlive(holder)) {
     console.error(`[qoqclashd] 已有后端进程 (pid ${holder}) 在使用数据目录 ${config.dataDir}`)
-    console.error('[qoqclashd] 多个后端共享同一个 SQLite 文件会互相覆盖数据，请先停掉另一个实例再启动。')
+    console.error(
+      '[qoqclashd] 多个后端共享同一个 SQLite 文件会互相覆盖数据，请先停掉另一个实例再启动。',
+    )
     process.exit(1)
   }
   writeFileSync(lockPath, String(process.pid))
@@ -68,7 +80,11 @@ const agent = createAgent({
 const controlListener = toNodeListener(agent.router)
 const websocketServer = new WebSocketServer({ noServer: true })
 
-const proxyMihomoWebSocket = (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
+const proxyMihomoWebSocket = (
+  req: IncomingMessage,
+  socket: import('node:stream').Duplex,
+  head: Buffer,
+) => {
   const requestUrl = new URL(req.url || '/', 'http://localhost')
   const upstream = new URL(config.apiHost)
   upstream.protocol = upstream.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -81,13 +97,19 @@ const proxyMihomoWebSocket = (req: IncomingMessage, socket: import('node:stream'
   websocketServer.handleUpgrade(req, socket, head, (client) => {
     const upstreamSocket = new WebSocket(upstream, { headers })
     const closeBoth = () => {
-      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) client.close()
-      if (upstreamSocket.readyState === WebSocket.OPEN || upstreamSocket.readyState === WebSocket.CONNECTING) upstreamSocket.close()
+      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING)
+        client.close()
+      if (
+        upstreamSocket.readyState === WebSocket.OPEN ||
+        upstreamSocket.readyState === WebSocket.CONNECTING
+      )
+        upstreamSocket.close()
     }
 
     upstreamSocket.on('open', () => {
       client.on('message', (data, isBinary) => {
-        if (upstreamSocket.readyState === WebSocket.OPEN) upstreamSocket.send(data, { binary: isBinary })
+        if (upstreamSocket.readyState === WebSocket.OPEN)
+          upstreamSocket.send(data, { binary: isBinary })
       })
       upstreamSocket.on('message', (data, isBinary) => {
         if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary })
@@ -132,9 +154,8 @@ async function sendStatic(req: IncomingMessage, res: ServerResponse): Promise<vo
   const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
   const candidate = normalize(join(distDir, relative))
   const filePath = candidate.startsWith(distDir) ? candidate : join(distDir, 'index.html')
-  const finalPath = existsSync(filePath) && statSync(filePath).isFile()
-    ? filePath
-    : join(distDir, 'index.html')
+  const finalPath =
+    existsSync(filePath) && statSync(filePath).isFile() ? filePath : join(distDir, 'index.html')
 
   if (!existsSync(finalPath)) {
     res.statusCode = 503
@@ -157,9 +178,11 @@ const server = createServer((req, res) => {
     void proxyMihomo(req, res).catch((error: unknown) => {
       res.statusCode = 502
       res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.end(JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-      }))
+      res.end(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      )
     })
     return
   }
@@ -190,6 +213,8 @@ process.once('SIGINT', () => void shutdown('SIGINT'))
 process.once('SIGTERM', () => void shutdown('SIGTERM'))
 
 await mkdir(distDir, { recursive: true })
+// 先应用设置页持久化的内核/配置目录，再开始接收控制请求。
+await agent.init()
 server.listen(config.port, config.host, () => {
   console.log(`[qoqclashd] listening on http://${config.host}:${config.port}`)
   console.log('[qoqclashd] control API mounted at /api/control')

@@ -2,8 +2,7 @@
 
 // Mirror of @metacubexd/agent KernelStatus / KernelState (SHARED CONTRACTS).
 // UI-local copies: the UI builds standalone (gh-pages) and never imports the agent.
-export type KernelStatus =
-  'stopped' | 'starting' | 'running' | 'stopping' | 'errored'
+export type KernelStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'errored'
 
 export interface KernelState {
   status: KernelStatus
@@ -14,6 +13,10 @@ export interface KernelState {
   secret: string
   lastExitCode?: number | null
   lastError?: string
+  // Merged by the agent from its layout/KV: whether the kernel binary file
+  // exists on disk, and the last release tag installed via kernel/ensure.
+  binaryExists?: boolean
+  installedVersion?: string
 }
 
 export type ProfileType = 'local' | 'remote' | 'merge' | 'script'
