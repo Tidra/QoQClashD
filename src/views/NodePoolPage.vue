@@ -25,6 +25,9 @@
           <TableCellsIcon v-if="groupViewMode === 'card'" class="h-4 w-4" />
           <Squares2X2Icon v-else class="h-4 w-4" />
         </button>
+        <button type="button" class="btn btn-circle btn-sm" :disabled="isTesting || !visibleRealGroups.length" :title="$t('nodeTestAll')" @click="testAllGroupNodes">
+          <BoltIcon class="h-4 w-4" />
+        </button>
         <button type="button" class="btn btn-primary btn-sm" @click="openCreateGroup">
           <PlusIcon class="h-4 w-4" />
           {{ $t('proxyGroupEditorAddGroup') }}
@@ -62,8 +65,8 @@
           </button>
         </div>
         <div v-else-if="nodeViewMode === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-          <div v-for="node in filteredNodes" :key="node.id" class="bg-base-200 hover:bg-base-300/50 relative flex flex-col items-start gap-2 rounded-md p-2 transition-colors hover:shadow-sm">
-            <div class="flex min-w-0 items-start justify-between gap-3">
+          <div v-for="node in filteredNodes" :key="node.id" class="bg-base-200 hover:bg-base-300/50 relative flex min-w-0 flex-col items-start gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm">
+            <div class="flex w-full min-w-0 items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="truncate font-medium">{{ node.name }}</div>
                 <div class="text-base-content/60 mt-1 truncate text-xs">{{ node.type }} · {{ node.server }}:{{ node.port }}</div>
@@ -74,10 +77,12 @@
                 <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" @click.stop="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
                 <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" @click.stop="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
               </div>
-              <button type="button" class="badge badge-ghost h-5 min-h-5 shrink-0 cursor-pointer px-1.5 text-[10px]" :disabled="isTesting" @click.stop="testNode(node.name)">
-                <span v-if="latencyMap[node.name] !== undefined">{{ latencyMap[node.name] ?? '—' }}ms</span>
-                <template v-else><BoltIcon class="h-3 w-3" /> {{ $t('nodeTestLatency') }}</template>
-              </button>
+              <div class="flex shrink-0 items-center gap-1">
+                <span v-if="latencyMap[node.name] !== undefined" class="text-base-content/60 text-[10px]">{{ latencyMap[node.name] ?? '—' }}ms</span>
+                <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isTesting" :title="$t('nodeTestLatency')" @click.stop="testNode(node.name)">
+                  <BoltIcon class="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -112,7 +117,7 @@
                 <td v-if="nodeTableColumns.includes('cipher')" class="max-w-28 truncate">{{ node.cipher || '—' }}</td>
                 <td v-if="nodeTableColumns.includes('sni')" class="max-w-40 truncate" :title="node.sni">{{ node.sni || '—' }}</td>
                 <td v-if="nodeTableColumns.includes('latency')" class="whitespace-nowrap">{{ latencyMap[node.name] ?? '—' }}<span v-if="latencyMap[node.name] !== undefined">ms</span></td>
-                <td class="pinned-td sticky right-0 z-10 group-hover:bg-base-200! text-right whitespace-nowrap" @click.stop>
+                <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap" @click.stop>
                   <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :title="$t('edit')" @click="editStandaloneNode(node)"><PencilIcon class="h-3.5 w-3.5" /></button>
                   <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :title="$t('delete')" @click="removeStandaloneNode(node)"><TrashIcon class="h-3.5 w-3.5" /></button>
                 </td>
@@ -158,6 +163,7 @@
               </div>
             </div>
             <div class="relative z-10 flex shrink-0 gap-0.5">
+              <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isTesting || !groupNodeMembers(group).length" :title="$t('nodeTestAll')" @click.stop="testGroupNodes(group)"><BoltIcon class="h-3.5 w-3.5" /></button>
               <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click.stop="openEditGroup(group)"><PencilIcon class="h-3.5 w-3.5" /></button>
               <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0 text-error" :disabled="isProtectedGroup(group.name)" :title="$t('proxyGroupEditorDeleteGroup')" @click.stop="deleteRealGroup(group)"><TrashIcon class="h-3.5 w-3.5" /></button>
             </div>
@@ -179,23 +185,39 @@
             class="flex flex-wrap content-start gap-1"
             :class="!groupExpandedMap[group.name] && 'max-h-13 overflow-hidden'"
           >
-            <button
+            <div
               v-for="member in filterGroupMembers(group)"
               :key="member"
-              type="button"
               class="flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors"
               :class="memberChipClass(group, member)"
-              :disabled="!isSelectableGroup(group)"
               :title="memberTitle(group, member)"
-              @click="selectGroupMember(group, member)"
             >
-              <span
-                class="h-1.5 w-1.5 shrink-0 rounded-full"
-                :class="memberKind(member) === 'group' ? 'bg-warning' : memberKind(member) === 'node' ? 'bg-info' : 'bg-error'"
-              ></span>
-              <span class="min-w-0 truncate" :class="{ 'line-through': memberKind(member) === 'missing' }">{{ member }}</span>
-              <CheckIcon v-if="group['default-selected'] === member" class="h-3 w-3 shrink-0" />
-            </button>
+              <button
+                type="button"
+                class="flex min-w-0 items-center gap-1"
+                :disabled="!isSelectableGroup(group)"
+                @click="selectGroupMember(group, member)"
+              >
+                <span
+                  class="h-1.5 w-1.5 shrink-0 rounded-full"
+                  :class="memberKind(member) === 'group' ? 'bg-warning' : memberKind(member) === 'node' ? 'bg-info' : 'bg-error'"
+                ></span>
+                <span class="min-w-0 truncate" :class="{ 'line-through': memberKind(member) === 'missing' }">{{ member }}</span>
+                <CheckIcon v-if="group['default-selected'] === member" class="h-3 w-3 shrink-0" />
+              </button>
+              <template v-if="memberKind(member) === 'node'">
+                <span v-if="latencyMap[member] !== undefined" class="shrink-0 text-[10px] opacity-70">{{ latencyMap[member] ?? '—' }}ms</span>
+                <button
+                  type="button"
+                  class="shrink-0 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30"
+                  :disabled="isTesting"
+                  :title="$t('nodeTestLatency')"
+                  @click.stop="testNode(member)"
+                >
+                  <BoltIcon class="h-3 w-3" />
+                </button>
+              </template>
+            </div>
           </div>
           <button
             v-if="groupExpandedMap[group.name] || groupMembersOverflowMap[group.name]"
@@ -248,7 +270,7 @@
                 />
                 <span v-else class="text-base-content/40">—</span>
               </td>
-              <td class="pinned-td sticky right-0 z-10 group-hover:bg-base-200! text-right whitespace-nowrap">
+              <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
                 <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="isProtectedGroup(group.name)" :title="$t('edit')" @click="openEditGroup(group)">
                   <PencilIcon class="h-3.5 w-3.5" />
                 </button>
@@ -564,7 +586,7 @@ import SegmentedControl, { type SegmentOption } from '@/components/common/Segmen
 import SelectInput from '@/components/common/SelectInput.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import ProxyGroupEditor from '@/components/proxies/ProxyGroupEditor.vue'
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStorage } from '@vueuse/core'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
@@ -681,17 +703,32 @@ const filterGroupMembers = (group: ProxyGroupDraft): string[] => {
 // 卡片成员折叠：收起时容器限高两行，实测溢出才显示「展开全部」
 const groupExpandedMap = reactive<Record<string, boolean>>({})
 const groupMembersOverflowMap = reactive<Record<string, boolean>>({})
+const memberObservers = new Map<string, ResizeObserver>()
 const measureGroupMembers = (name: string, el: unknown) => {
   const div = el as HTMLElement | null
-  if (!div) return
-  // ref 回调时子树可能尚未插入文档，此时高度全是 0，要等 DOM 提交后再量
-  void nextTick(() => {
+  if (!div) {
+    memberObservers.get(name)?.disconnect()
+    memberObservers.delete(name)
+    return
+  }
+  const check = () => {
     const overflow = div.scrollHeight > div.clientHeight + 1
     if (groupMembersOverflowMap[name] !== overflow) {
       groupMembersOverflowMap[name] = overflow
     }
-  })
+  }
+  // 页面过渡 out-in 挂载时元素可能还没布局（高度全 0），一次性测量会永远拿到 false；
+  // ResizeObserver 在元素真正获得尺寸后再测，卸载（el 变 null）时断开
+  memberObservers.get(name)?.disconnect()
+  const observer = new ResizeObserver(check)
+  observer.observe(div)
+  memberObservers.set(name, observer)
+  void nextTick(check)
 }
+onUnmounted(() => {
+  for (const observer of memberObservers.values()) observer.disconnect()
+  memberObservers.clear()
+})
 
 // 分组类型标签
 const groupTypeLabel = (type: string) => {
@@ -1008,5 +1045,21 @@ const testNode = async (nodeName: string) => {
 
 const testAllStandaloneNodes = async () => {
   for (const node of filteredNodes.value) await testNode(node.name)
+}
+
+// 代理组里可测速的节点成员（排除子代理组/失效名）
+const groupNodeMembers = (group: ProxyGroupDraft): string[] =>
+  resolveGroupMembers(group, [...nodeNameSet.value]).filter((name) => nodeNameSet.value.has(name))
+
+const testGroupNodes = async (group: ProxyGroupDraft) => {
+  for (const name of groupNodeMembers(group)) await testNode(name)
+}
+
+const testAllGroupNodes = async () => {
+  const names = new Set<string>()
+  for (const group of visibleRealGroups.value) {
+    for (const name of groupNodeMembers(group)) names.add(name)
+  }
+  for (const name of names) await testNode(name)
 }
 </script>

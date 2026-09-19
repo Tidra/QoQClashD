@@ -57,7 +57,7 @@
                 <span v-else class="text-base-content/40">—</span>
               </td>
               <td class="whitespace-nowrap text-xs">{{ item.updatedAt ? formatDate(item.updatedAt) : $t('subscriptionNeverUpdated') }}</td>
-              <td class="pinned-td sticky right-0 z-10 group-hover:bg-base-200! text-right whitespace-nowrap">
+              <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
                 <button type="button" class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0" :disabled="!item.enabled || subscriptionStatus[item.id] === 'pending'" :title="$t('subscriptionRefresh')" @click="refreshOne(item.id)">
                   <ArrowPathIcon class="h-3.5 w-3.5" />
                 </button>
