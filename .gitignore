@@ -30,7 +30,14 @@ coverage
 
 *.tsbuildinfo
 
-# 运行时产物：下载的内核二进制、agent 运行时生成的配置与锁文件,不入库
+# 构建产物：pnpm build:server 的 esbuild 输出，pnpm start 时按需重新生成
+/dist-server/
+
+# 运行时产物：下载的内核二进制、agent 生成的配置/锁文件与 profile 目录,不入库
 /kernel/
 /data/config/
 /data/server.lock
+/data/profiles/
+
+# 设计图纸留档（仅本地参考，不参与构建）
+/design/
