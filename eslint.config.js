@@ -10,7 +10,7 @@ export default [
 
   {
     name: 'app/files-to-ignore',
-    ignores: ['**/dist/**', '**/dist-ssr/**', '**/coverage/**'],
+    ignores: ['**/dist/**', '**/dist-server/**', '**/dist-ssr/**', '**/coverage/**'],
   },
 
   // 视图层不得自行判断后端类型,也不得直接调 api 层。

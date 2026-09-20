@@ -1,4 +1,4 @@
-// 组装层 · 后端判别与能力表。
+// 组装层 · 内核品牌判别与能力表。
 //
 // 只有一条判别轴,且**仅限 assembly 层内部使用**
 //(components / views / composables 由 eslint no-restricted-imports 禁止导入):
@@ -6,7 +6,7 @@
 //   core —— 运行时内核品牌。靠 /version 字符串嗅探得来,是启发式猜测,
 //           可能误判(分支核 / 兼容核),且拉取完成前为 'unknown'。
 //
-// 连接通道只剩 Clash REST/WS 一条,其上实际在用的 API 形态有两种:
+// 连接通道只剩同源代理的 Clash REST/WS 一条,其上实际在用的 API 形态有两种:
 //   A. core=mihomo  mihomo 的 Clash API
 //   B. core=honk    honk 的 Clash 兼容 API(端点子集)
 //
@@ -19,11 +19,7 @@
 // proxy.type 决定)不进此表,就近放在对应的 assembly 子模块里 —— 数据比版本
 // 字符串可靠,不该被降级成全局猜测。
 
-import { probeClashChannel } from '@/api/clash'
-import type { ProbeResult } from '@/helper/connectivity'
 import { displayAllFeatures } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
-import type { Backend } from '@/types'
 import { computed, ref } from 'vue'
 
 export enum Core {
@@ -33,7 +29,7 @@ export enum Core {
 }
 
 // core 由 assembly/version.ts 在探测 /version 后写入,
-// 后端切换时先重置为未知,避免沿用上一个后端的结论。
+// 每次重开会话前先重置为未知,避免沿用上一次探测的结论。
 export const core = ref<Core>(Core.Unknown)
 
 export const resetCore = () => {
@@ -48,7 +44,7 @@ const isNonMihomoCore = computed(() => core.value === Core.Honk)
 const isForkCoreOverride = computed(() => isNonMihomoCore.value && displayAllFeatures.value)
 
 // 开关自身的可见性与其生效范围保持一致。
-export const showDisplayAllFeatures = computed(() => !!activeBackend.value && isNonMihomoCore.value)
+export const showDisplayAllFeatures = isNonMihomoCore
 
 const soft = computed(() => {
   const mihomo = core.value === Core.Mihomo
@@ -62,8 +58,6 @@ const soft = computed(() => {
     reloadConfigs: mihomoOrForkCore,
     updateConfigs: mihomoOrForkCore,
     updateGeoDatabase: mihomoOrForkCore,
-    // /storage/zashboard 设置同步,mihomo 扩展
-    syncSettings: mihomoOrForkCore,
     independentLatency: mihomoOrForkCore,
     coreUpdateCheck: mihomo,
     // ports / tun / allow-lan 等 PATCH /configs 配置块。
@@ -86,21 +80,6 @@ const soft = computed(() => {
 
 export type Cap = keyof typeof soft.value
 
-export const can = (cap: Cap): boolean => {
-  if (!activeBackend.value) return false
-
-  // displayAllFeatures 的覆盖已在能力表内按行决定,这里只查表。
-  return soft.value[cap]
-}
-
-// 后端连通性探测(供 Setup / EditBackend / 连接失败页使用)。
-// 结果形状统一成 ProbeResult:成功带耗时,失败带可诊断的分类,
-// 由 helper/connectivity 的 describeProbeFailure 翻译成给用户看的一句话。
-export const probeBackend = async (
-  backend: Backend,
-  timeout: number = 10000,
-  signal?: AbortSignal,
-): Promise<ProbeResult> => probeClashChannel(backend, timeout, signal)
-
-export const isBackendAvailable = (backend: Backend, timeout: number = 10000) =>
-  probeBackend(backend, timeout).then((result) => result.ok)
+// 探测没出结论(Core.Unknown)前能力表整行都是 false:按钮不能凭一个还没确定的品牌
+// 就摆出来,所以门控挪到这里,行为与原先「没有后端就全 false」一致。
+export const can = (cap: Cap): boolean => soft.value[cap]

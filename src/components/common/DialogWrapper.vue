@@ -100,15 +100,18 @@ const SWIPE_TRANSITION = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
 type SwipeState = 'idle' | 'pending' | 'dragging' | 'settling' | 'dismissing' | 'rejected'
 
 const isOpen = defineModel<boolean>()
-const props = withDefaults(defineProps<{
-  noPadding?: boolean
-  boxClass?: string
-  title?: string
-  /** 是否显示标题栏右上角的关闭按钮。默认 true；编辑类弹窗常自带底部操作行可关掉。 */
-  showCloseButton?: boolean
-}>(), {
-  showCloseButton: true,
-})
+withDefaults(
+  defineProps<{
+    noPadding?: boolean
+    boxClass?: string
+    title?: string
+    /** 是否显示标题栏右上角的关闭按钮。默认 true；编辑类弹窗常自带底部操作行可关掉。 */
+    showCloseButton?: boolean
+  }>(),
+  {
+    showCloseButton: true,
+  },
+)
 const emits = defineEmits<{
   (e: 'enter'): void
 }>()

@@ -1,4 +1,4 @@
-import { createAgent } from '@metacubexd/agent'
+import { createAgent, readSessionCookie } from '@metacubexd/agent'
 import { toNodeListener } from 'h3'
 import {
   createReadStream,
@@ -80,19 +80,42 @@ const agent = createAgent({
 const controlListener = toNodeListener(agent.router)
 const websocketServer = new WebSocketServer({ noServer: true })
 
+// /api/control 的鉴权在 agent 的路由中间件里；/api/mihomo 由本文件自己转发，必须
+// 用同一张会话 cookie 把关，否则未登录也能绕过面板直读直写内核。
+const hasPanelSession = (req: IncomingMessage) =>
+  agent.sessions.verify(readSessionCookie(req.headers.cookie))
+
+// 内核的 API 地址与密码都归 agent 托管（设置页可改端口/共用密码），环境变量只是
+// 初始值，所以每次转发都读 supervisor 的实时状态，而不是启动时快照的 config。
+const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]'])
+const mihomoUpstream = () => {
+  // secret 只能走 getControllerSecret()：它故意不在 getState() 里，状态对象会被
+  // 控制接口和 SSE 帧原样序列化下发。
+  const { externalController } = agent.supervisor.getState()
+  const secret = agent.supervisor.getControllerSecret()
+  const withScheme = externalController.startsWith('http')
+    ? externalController
+    : `http://${externalController}`
+  const url = new URL(withScheme)
+  // 内核绑通配地址时，客户端 socket 连 0.0.0.0/:: 不一定可路由（同 supervisor
+  // 的就绪轮询）。
+  if (WILDCARD_HOSTS.has(url.hostname)) url.hostname = '127.0.0.1'
+  return { url, secret }
+}
+
 const proxyMihomoWebSocket = (
   req: IncomingMessage,
   socket: import('node:stream').Duplex,
   head: Buffer,
 ) => {
   const requestUrl = new URL(req.url || '/', 'http://localhost')
-  const upstream = new URL(config.apiHost)
+  const { url: upstream, secret } = mihomoUpstream()
   upstream.protocol = upstream.protocol === 'https:' ? 'wss:' : 'ws:'
   upstream.pathname = `${upstream.pathname.replace(/\/+$/, '')}${requestUrl.pathname.replace(/^\/api\/mihomo/, '') || '/'}`
   upstream.search = requestUrl.search
 
   const headers: Record<string, string> = {}
-  if (config.apiSecret) headers.Authorization = `Bearer ${config.apiSecret}`
+  if (secret) headers.Authorization = `Bearer ${secret}`
 
   websocketServer.handleUpgrade(req, socket, head, (client) => {
     const upstreamSocket = new WebSocket(upstream, { headers })
@@ -124,7 +147,7 @@ const proxyMihomoWebSocket = (
 
 async function proxyMihomo(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const requestUrl = new URL(req.url || '/', 'http://localhost')
-  const upstream = new URL(config.apiHost)
+  const { url: upstream, secret } = mihomoUpstream()
   upstream.pathname = `${upstream.pathname.replace(/\/+$/, '')}${requestUrl.pathname.replace(/^\/api\/mihomo/, '') || '/'}`
   upstream.search = requestUrl.search
 
@@ -132,7 +155,7 @@ async function proxyMihomo(req: IncomingMessage, res: ServerResponse): Promise<v
   for await (const chunk of req) chunks.push(Buffer.from(chunk))
 
   const headers: Record<string, string> = {}
-  if (config.apiSecret) headers.Authorization = `Bearer ${config.apiSecret}`
+  if (secret) headers.Authorization = `Bearer ${secret}`
   const contentType = req.headers['content-type']
   if (contentType) headers['content-type'] = contentType
 
@@ -169,12 +192,22 @@ async function sendStatic(req: IncomingMessage, res: ServerResponse): Promise<vo
   createReadStream(finalPath).pipe(res)
 }
 
+const unauthorized = (res: ServerResponse) => {
+  res.statusCode = 401
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.end(JSON.stringify({ error: 'unauthorized' }))
+}
+
 const server = createServer((req, res) => {
   if ((req.url || '').split('?')[0].startsWith('/api/control')) {
     controlListener(req, res)
     return
   }
   if ((req.url || '').split('?')[0].startsWith('/api/mihomo')) {
+    if (!hasPanelSession(req)) {
+      unauthorized(res)
+      return
+    }
     void proxyMihomo(req, res).catch((error: unknown) => {
       res.statusCode = 502
       res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -191,6 +224,10 @@ const server = createServer((req, res) => {
 
 server.on('upgrade', (req, socket, head) => {
   if ((req.url || '').split('?')[0].startsWith('/api/mihomo/')) {
+    if (!hasPanelSession(req)) {
+      socket.destroy()
+      return
+    }
     proxyMihomoWebSocket(req, socket, head)
     return
   }

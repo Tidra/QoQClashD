@@ -73,18 +73,16 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable } from '@/assembly/backend'
-import { startBackendSession } from '@/assembly/session'
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { pageTransitionMode, pageTransitionName } from '@/composables/pageTransition'
+import { resumeKernelSession } from '@/composables/useKernelBackend'
 import { useSwipeRouter } from '@/composables/swipe'
 import { ROUTE_ICON_MAP } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
 import { fetchProxies } from '@/assembly/proxies'
 import { isSidebarCollapsed } from '@/store/settings'
-import { activeBackend, activeUuid } from '@/store/setup'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
 import { ref, watch } from 'vue'
 import { RouterView, useRouter } from 'vue-router'
@@ -126,27 +124,11 @@ watch(
 
 const documentVisible = useDocumentVisibility()
 
-// 息屏 / 切走期间后端可能已经没了(睡眠、换网、内核重启)。回到前台先确认一次,
-// 连不上就重开会话 —— 探测失败会把 BackendConnectionError 顶出来,
-// 由它给出诊断、重试和切换后端,这里不再自己弹一个只能二选一的对话框。
-watch(
-  documentVisible,
-  async () => {
-    if (!activeBackend.value || documentVisible.value !== 'visible') return
-
-    const uuid = activeBackend.value.uuid
-
-    if (await isBackendAvailable(activeBackend.value)) return
-    // 探测期间用户可能已经自己切走了,别把新后端的会话也重开一遍。
-    if (uuid === activeUuid.value) startBackendSession()
-  },
-  {
-    immediate: true,
-  },
-)
-
+// 回到前台先补一次代理数据；再确认内核还活着 —— 睡眠、手动停止都可能把它带走，
+// 而三条常驻流只会对着死端口无限重连，用户需要的是内核设置页那个「启动」按钮。
 watch(documentVisible, () => {
   if (documentVisible.value !== 'visible') return
   fetchProxies()
+  void resumeKernelSession()
 })
 </script>

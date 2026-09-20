@@ -6,11 +6,13 @@ import {
   createEventStream,
   createRouter,
   defineEventHandler,
+  getCookie,
   getHeader,
   getQuery,
   getRouterParam,
   readBody,
   sendNoContent,
+  setCookie,
   setResponseHeader,
   setResponseStatus,
 } from 'h3'
@@ -23,6 +25,8 @@ import { ConfigPatchConflictError } from './merge'
 import type { ProfileConfigEditor } from './profile-editor'
 import { ProfileEditorConflictError, ProfileEditorValidationError } from './profile-editor'
 import { SubscriptionFetchError } from './profiles'
+import type { PanelAuth, SessionManager } from './session'
+import { CREDENTIAL_KV_KEYS, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from './session'
 import type { AgentStorage } from './storage'
 import { TunPreconditionError } from './tun'
 import type {
@@ -35,9 +39,6 @@ import type {
   SystemProxyController,
   TunController,
 } from './types'
-import { createWebdavClient as defaultCreateWebdavClient } from './webdav'
-
-const BACKUP_FILENAME = 'metacubexd-backup.json'
 
 async function withSubscriptionHttpError<T>(action: () => Promise<T>): Promise<T> {
   try {
@@ -55,11 +56,15 @@ async function withSubscriptionHttpError<T>(action: () => Promise<T>): Promise<T
   }
 }
 
-interface WebdavCredentials {
-  url: string
-  username: string
-  password: string
-  dir?: string
+// 凭证键只能由 agent 自己签发（面板密码同时也是内核 API secret）。写入/删除路由一律
+// 拒绝，否则导入一份带 setup/panel-password 的 JSON 就能把面板密码改掉。
+function assertNonCredentialKeys(keys: string[]) {
+  const blocked = keys.filter((key) => CREDENTIAL_KV_KEYS.has(key))
+  if (!blocked.length) return
+  throw createError({
+    statusCode: 400,
+    statusMessage: `credential keys are not writable: ${blocked.join(', ')}`,
+  })
 }
 
 export interface ControlRouterDeps {
@@ -101,6 +106,20 @@ export interface ControlRouterDeps {
     profiles: string
     activeConfig: string
   }>
+  // Persist + apply the Clash API port. Optional: hosts that pin the controller
+  // (desktop builds) simply omit the route. 密码不在这里改 —— 面板/内核共用密码
+  // 归 /auth/password 管（见 deps.auth），明文永不过浏览器。
+  updateClashApi?: (patch: { port?: number }) => Promise<{
+    ok: boolean
+    error?: string
+    externalController?: string
+    port?: number
+    requiresRestart?: boolean
+  }>
+  // 面板登录会话。auth 与 sessions 是一对：两个都注入才开会话鉴权（只给一个说明
+  // 宿主接错了）；都不给时视为进程内宿主（桌面/测试），不设网络鉴权面。
+  auth?: PanelAuth
+  sessions?: SessionManager
   // Merged into GET /kernel/status: whether the binary file exists on disk and
   // which release tag was last installed (both live in the agent, not the
   // supervisor state).
@@ -109,7 +128,6 @@ export interface ControlRouterDeps {
     installedVersion?: string
   }>
   geoFetch?: typeof fetch // override for tests; defaults to global fetch
-  createWebdavClient?: typeof defaultCreateWebdavClient // override for tests
   readFile?: typeof defaultReadFile // override for tests; defaults to fs/promises readFile
   storage?: AgentStorage
 }
@@ -124,27 +142,34 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     profiles,
     profileEditor,
     info,
-    token,
     systemProxy,
     kernelManager,
     tunController,
     geoFetch,
-    createWebdavClient = defaultCreateWebdavClient,
     readFile = defaultReadFile,
   } = deps
 
   // ---- Auth middleware: applied to every route except public ones. ----
+  // 会话 cookie 优先，其次才是宿主注入的静态 token（桌面/CLI 客户端）。两者都没
+  // 配时不能默认放行：放行与否取决于这个宿主有没有开面板鉴权。
+  const { auth, sessions } = deps
+  const authEnabled = !!auth && !!sessions
+
   function isPublic(path: string): boolean {
-    return path === `${PREFIX}/health` || path === `${PREFIX}/info`
+    if (path === `${PREFIX}/health` || path === `${PREFIX}/info`) return true
+    // 登录页要在拿到会话之前问「要不要设密码」，所以状态与登录本身必须敞开。
+    return authEnabled && (path === `${PREFIX}/auth/status` || path === `${PREFIX}/auth/login`)
   }
 
   function authorized(event: H3Event): boolean {
-    if (!token) return true // in-process (Electron) — no network surface
-    const header = getHeader(event, 'authorization')
-    if (header === `Bearer ${token}`) return true
-    const q = getQuery(event)
-    if (q.token === token) return true // SSE may pass ?token=
-    return false
+    if (sessions?.verify(getCookie(event, SESSION_COOKIE))) return true
+    const token = deps.token
+    if (token) {
+      // 静态 Bearer 只走请求头：面板全程用会话 cookie，把 token 放进 query 只会
+      // 让它出现在访问日志里。
+      return getHeader(event, 'authorization') === `Bearer ${token}`
+    }
+    return !authEnabled
   }
 
   app.use(
@@ -158,6 +183,66 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       }
     }),
   )
+
+  // ---- Panel auth (session cookie) ----
+  // 密码只有 agent 持有：/auth/status 报 needsSetup，/auth/login 校验并签发 7 天
+  // 会话 cookie，全程不下发明文。
+  if (auth && sessions) {
+    // 登录成功即发 cookie；反向代理终止 TLS 时靠 X-Forwarded-Proto 判 https。
+    const issueSession = (event: H3Event) => {
+      const value = sessions.issue()
+      if (!value) return
+      setCookie(event, SESSION_COOKIE, value, {
+        maxAge: SESSION_MAX_AGE_SECONDS,
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: getHeader(event, 'x-forwarded-proto') === 'https',
+      })
+    }
+
+    router.get(
+      `${PREFIX}/auth/status`,
+      defineEventHandler((event) => ({
+        needsSetup: auth.needsSetup(),
+        authenticated: sessions.verify(getCookie(event, SESSION_COOKIE)),
+      })),
+    )
+    router.post(
+      `${PREFIX}/auth/login`,
+      defineEventHandler(async (event) => {
+        const body = (await readBody(event).catch(() => ({}))) as { password?: unknown }
+        const result = await auth.login(typeof body?.password === 'string' ? body.password : '')
+        // 密码错也回 200 + { ok:false }：控制接口的业务失败一律用这个形状，
+        // 前端不必为了读 error 去解析 ky 抛出的 HTTPError。
+        if (result.ok) issueSession(event)
+        return result
+      }),
+    )
+    router.post(
+      `${PREFIX}/auth/logout`,
+      defineEventHandler((event) => {
+        setCookie(event, SESSION_COOKIE, '', { maxAge: 0, path: '/', httpOnly: true })
+        return { ok: true }
+      }),
+    )
+    // 改密 = 换签名密钥，之前签发的 cookie 全部作废，所以给当前浏览器补发一张。
+    router.put(
+      `${PREFIX}/auth/password`,
+      defineEventHandler(async (event) => {
+        const body = (await readBody(event).catch(() => ({}))) as {
+          currentPassword?: unknown
+          newPassword?: unknown
+        }
+        const result = await auth.changePassword(
+          typeof body?.currentPassword === 'string' ? body.currentPassword : '',
+          typeof body?.newPassword === 'string' ? body.newPassword : '',
+        )
+        if (result.ok) issueSession(event)
+        return result
+      }),
+    )
+  }
 
   // ---- Health + info ----
   router.get(
@@ -176,8 +261,18 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     `${PREFIX}/storage/kv`,
     defineEventHandler(async (event) => {
       if (!deps.storage) return { value: null }
-      const key = String(getQuery(event).key || '')
-      if (!key) throw createError({ statusCode: 400, statusMessage: 'key is required' })
+      const query = getQuery(event)
+      // 导出用 prefix 一次取整段，避免前端为几十个键发几十个请求。prefix 只要出现
+      // 就走列表分支（空串即全库），不能再拿真值判断，否则全库导出会被当成缺参数。
+      if (query.prefix !== undefined) {
+        const entries = await deps.storage.list(String(query.prefix))
+        // 密码在服务端就被挡下：即使前端的导出过滤哪天漏了，全库读也拿不到明文凭证。
+        for (const key of CREDENTIAL_KV_KEYS) delete entries[key]
+        return { entries }
+      }
+      const key = String(query.key || '')
+      if (!key) throw createError({ statusCode: 400, statusMessage: 'key or prefix is required' })
+      if (CREDENTIAL_KV_KEYS.has(key)) return { value: null }
       return { value: await deps.storage.get(key) }
     }),
   )
@@ -186,10 +281,27 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     defineEventHandler(async (event) => {
       if (!deps.storage)
         throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
-      const body = (await readBody(event)) as { key?: string; value?: string }
+      const body = (await readBody(event)) as {
+        key?: string
+        value?: string
+        entries?: Record<string, string>
+      }
+      // 导入设置：一整段一次写，只碰点名的键，不隐式清空其它键。
+      if (body.entries) {
+        assertNonCredentialKeys(Object.keys(body.entries))
+        const entries = Object.fromEntries(
+          Object.entries(body.entries).filter(([, value]) => typeof value === 'string'),
+        )
+        if (Object.keys(entries).length === 0) {
+          throw createError({ statusCode: 400, statusMessage: 'entries must hold string values' })
+        }
+        await deps.storage.putMany(entries)
+        return { ok: true, written: Object.keys(entries).length }
+      }
       if (!body.key || typeof body.value !== 'string') {
         throw createError({ statusCode: 400, statusMessage: 'key and value are required' })
       }
+      assertNonCredentialKeys([body.key])
       await deps.storage.set(body.key, body.value)
       return { ok: true }
     }),
@@ -201,6 +313,7 @@ export function createControlRouter(deps: ControlRouterDeps): App {
         throw createError({ statusCode: 503, statusMessage: 'storage unavailable' })
       const key = String(getQuery(event).key || '')
       if (!key) throw createError({ statusCode: 400, statusMessage: 'key is required' })
+      assertNonCredentialKeys([key])
       await deps.storage.delete(key)
       return { ok: true }
     }),
@@ -245,6 +358,9 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     `${PREFIX}/kernel/status`,
     defineEventHandler(async () => ({
       ...supervisor.getState(),
+      // state 里没有明文密码（见 MihomoSupervisor.getControllerSecret），浏览器只
+      // 需要知道「有没有设密码」来决定占位符文案。
+      secretSet: supervisor.getControllerSecret().length > 0,
       ...(await deps.kernelStatusExtras?.()),
     })),
   )
@@ -295,6 +411,21 @@ export function createControlRouter(deps: ControlRouterDeps): App {
           error: error instanceof Error ? error.message : String(error),
         }
       }
+    }),
+  )
+  // 设置页改「Clash API 端口」。改完要不要重启内核由 requiresRestart 说明 ——
+  // active.yaml 的托管头是 spawn 时注入的。密码走 /auth/password。
+  router.put(
+    `${PREFIX}/kernel/api`,
+    defineEventHandler(async (event) => {
+      if (!deps.updateClashApi) {
+        return { ok: false, error: 'kernel api is not manageable on this host' }
+      }
+      const body = (await readBody(event).catch(() => ({}))) as { port?: unknown }
+      if (typeof body?.port !== 'number') {
+        throw createError({ statusCode: 400, statusMessage: 'port is required' })
+      }
+      return deps.updateClashApi({ port: body.port })
     }),
   )
   // Restore the last-known-good active config (the .bak snapshot written by the
@@ -689,110 +820,6 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     defineEventHandler(async () => {
       const { files } = await fetchGeoAssets(deps.homeDir, { fetch: geoFetch })
       return { ok: true, files }
-    }),
-  )
-
-  // ---- WebDAV backup / restore (always available — credentials per-request) ----
-  function backupPath(dir?: string): string {
-    if (!dir) return BACKUP_FILENAME
-    let end = dir.length
-    while (end > 0 && dir[end - 1] === '/') end--
-    return `${dir.slice(0, end)}/${BACKUP_FILENAME}`
-  }
-
-  router.post(
-    `${PREFIX}/backup`,
-    defineEventHandler(async (event) => {
-      const body = (await readBody(event)) as {
-        webdav: WebdavCredentials
-        uiSettings?: unknown
-      }
-      const { webdav } = body
-      const client = createWebdavClient({
-        url: webdav.url,
-        username: webdav.username,
-        password: webdav.password,
-      })
-      // Build a bundle of every profile (meta + raw content).
-      const metas = await profiles.list()
-      const bundleProfiles = await Promise.all(
-        metas.map(async (meta) => ({
-          meta,
-          content: await profiles.read(meta.id),
-        })),
-      )
-      const bundle = {
-        version: 1 as const,
-        profiles: bundleProfiles,
-        ...(body.uiSettings !== undefined ? { uiSettings: body.uiSettings } : {}),
-      }
-      // Best-effort directory creation — ignore "already exists" / transient errors
-      // so an existing collection doesn't fail the upload.
-      if (webdav.dir) {
-        await client.mkcol(webdav.dir).catch(() => {})
-      }
-      const path = backupPath(webdav.dir)
-      await client.put(path, JSON.stringify(bundle))
-      return { ok: true, path }
-    }),
-  )
-
-  router.post(
-    `${PREFIX}/restore`,
-    defineEventHandler(async (event) => {
-      const body = (await readBody(event)) as { webdav: WebdavCredentials }
-      const { webdav } = body
-      const client = createWebdavClient({
-        url: webdav.url,
-        username: webdav.username,
-        password: webdav.password,
-      })
-      const raw = await client.get(backupPath(webdav.dir))
-      const bundle = JSON.parse(raw) as {
-        version: number
-        profiles: Array<{
-          meta: {
-            id?: string
-            name: string
-            type?: string
-            baseProfileId?: string
-            managedBy?: 'visual-editor'
-            editorStatus?: 'clean' | 'conflicted'
-          }
-          content: string
-        }>
-        uiSettings?: unknown
-      }
-      // Recreate via profiles.create so each restored profile gets a fresh id
-      // (avoids clashing with any existing local ids).
-      let restored = 0
-      const restoredIds = new Map<string, string>()
-      const ordinary = (bundle.profiles ?? []).filter(
-        (profile) => profile.meta.managedBy !== 'visual-editor',
-      )
-      const managed = (bundle.profiles ?? []).filter(
-        (profile) => profile.meta.managedBy === 'visual-editor',
-      )
-      for (const p of [...ordinary, ...managed]) {
-        // Preserve composition types (merge/script) so restored overlays/scripts
-        // still apply; 'remote' is intentionally restored as 'local' (keep the
-        // captured content, no network re-fetch).
-        const type = p.meta.type === 'merge' || p.meta.type === 'script' ? p.meta.type : 'local'
-        const mappedBaseId = p.meta.baseProfileId
-          ? restoredIds.get(p.meta.baseProfileId)
-          : undefined
-        const created = await profiles.create({
-          name: p.meta.name,
-          content: p.content,
-          type,
-          ...(mappedBaseId ? { baseProfileId: mappedBaseId } : {}),
-          ...(p.meta.managedBy ? { managedBy: p.meta.managedBy } : {}),
-          ...(p.meta.editorStatus ? { editorStatus: p.meta.editorStatus } : {}),
-        })
-        if (p.meta.id) restoredIds.set(p.meta.id, created.id)
-        restored += 1
-      }
-      return { ok: true, restored, uiSettings: bundle.uiSettings }
     }),
   )
 

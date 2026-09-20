@@ -19,6 +19,9 @@ function opts() {
     homeDir: home,
     activeConfigPath: join(home, 'active.yaml'),
     profilesDir: join(home, 'profiles'),
+    // 不指定的话 createAgent 会落到 cwd/data/qoqclashd.sqlite —— 用例之间共用一
+    // 张表，前一个用例写的密码会渗进后一个。
+    dataDir: join(home, 'data'),
     agentToken: 'tok',
   }
 }
@@ -43,7 +46,6 @@ describe('createAgent', () => {
         'logs-sse',
         'kernel-control',
         'geo-assets',
-        'webdav-backup',
         'runtime-config',
         'config-sections',
         'visual-config-editor',
@@ -59,11 +61,6 @@ describe('createAgent', () => {
   it('info().features always includes geo-assets (homeDir-backed, no controller)', () => {
     const agent = createAgent(opts())
     expect(agent.info().features).toContain('geo-assets')
-  })
-
-  it('info().features always includes webdav-backup (request-scoped credentials)', () => {
-    const agent = createAgent(opts())
-    expect(agent.info().features).toContain('webdav-backup')
   })
 
   it('info().features always includes runtime-config (reads activeConfigPath)', () => {
@@ -156,6 +153,73 @@ describe('createAgent', () => {
     expect(after.config).toBe(join(customRoot, 'config'))
     expect(after.profiles).toBe(join(customRoot, 'profiles'))
     expect(after.activeConfig).toBe(join(customRoot, 'config', 'active.yaml'))
+  })
+
+  it('面板密码由 agent 持有：首次 login 创建并同步内核 secret', async () => {
+    const agent = createAgent(opts())
+    expect(agent.auth.needsSetup()).toBe(true)
+    expect(await agent.auth.login('   ')).toEqual({ ok: false, error: 'password-required' })
+
+    const created = await agent.auth.login('1234')
+    expect(created).toMatchObject({ ok: true, created: true })
+    expect(agent.auth.needsSetup()).toBe(false)
+    expect(agent.supervisor.getControllerSecret()).toBe('1234')
+    expect(await agent.storage.get('setup/panel-password')).toBe('"1234"')
+
+    expect(await agent.auth.login('nope')).toEqual({ ok: false, error: 'invalid-password' })
+    expect((await agent.auth.login('1234')).ok).toBe(true)
+  })
+
+  it('会话 cookie 跟着密码走：改密后旧 cookie 立即失效', async () => {
+    const agent = createAgent(opts())
+    await agent.auth.login('1234')
+    const cookie = agent.sessions.issue()
+    expect(agent.sessions.verify(cookie)).toBe(true)
+
+    const wrong = await agent.auth.changePassword('nope', '5678')
+    expect(wrong).toEqual({ ok: false, error: 'invalid-password' })
+    expect(await agent.auth.changePassword('1234', '  ')).toEqual({
+      ok: false,
+      error: 'password-required',
+    })
+
+    expect(await agent.auth.changePassword('1234', '5678')).toMatchObject({ ok: true })
+    expect(agent.sessions.verify(cookie)).toBe(false)
+    expect(agent.sessions.verify(agent.sessions.issue())).toBe(true)
+    expect(agent.supervisor.getControllerSecret()).toBe('5678')
+    expect(await agent.storage.get('setup/panel-password')).toBe('"5678"')
+  })
+
+  it('init() 把 KV 里的密码灌回内存与内核', async () => {
+    const options = opts()
+    const agent = createAgent(options)
+    await agent.auth.login('1234')
+
+    const restarted = createAgent(options)
+    expect(restarted.auth.needsSetup()).toBe(true) // init() 前还没读 KV
+    await restarted.init()
+    expect(restarted.auth.needsSetup()).toBe(false)
+    expect(restarted.supervisor.getControllerSecret()).toBe('1234')
+    expect(restarted.sessions.verify(restarted.sessions.issue())).toBe(true)
+  })
+
+  it('env 给了 agentToken 时它即成初始密码，agent 不再放开控制面', async () => {
+    const agent = createAgent({ ...opts(), agentToken: 'env-tok' })
+    await agent.init()
+    expect(agent.auth.needsSetup()).toBe(false)
+    expect(agent.supervisor.getControllerSecret()).toBe('env-tok')
+  })
+
+  it('PUT /kernel/api 只管端口', async () => {
+    const agent = createAgent(opts())
+    expect(await agent.updateClashApi({})).toEqual({ ok: false, error: 'port is required' })
+    expect(await agent.updateClashApi({ port: 0 })).toMatchObject({ ok: false })
+    expect(await agent.updateClashApi({ port: 9099 })).toMatchObject({
+      ok: true,
+      port: 9099,
+      externalController: '127.0.0.1:9099',
+      requiresRestart: false,
+    })
   })
 
   it('re-exports the public surface', () => {

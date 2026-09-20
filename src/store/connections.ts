@@ -142,16 +142,18 @@ const isDesc = computed(() => {
 })
 
 // 排序键提取器:每条连接每拍只算一次键,替代在 O(N log N) 次比较里反复构串/建 dayjs。
+// 取值全部走箭头包一层:这些 helper 来自 @/helper 桶文件,而 helper → assembly/proxies →
+// 本模块构成 ESM 循环,模块顶层直接引用绑定会在初始化前读到 TDZ 报错。
 const sortKeyFunctionMap: Record<SORT_TYPE, (connection: Connection) => string | number> = {
-  [SORT_TYPE.HOST]: getHostFromConnection,
-  [SORT_TYPE.RULE]: getConnectionRule,
-  [SORT_TYPE.CHAINS]: getChainsStringFromConnection,
-  [SORT_TYPE.DOWNLOAD]: getConnectionDownload,
+  [SORT_TYPE.HOST]: (connection) => getHostFromConnection(connection),
+  [SORT_TYPE.RULE]: (connection) => getConnectionRule(connection),
+  [SORT_TYPE.CHAINS]: (connection) => getChainsStringFromConnection(connection),
+  [SORT_TYPE.DOWNLOAD]: (connection) => getConnectionDownload(connection),
   [SORT_TYPE.DOWNLOAD_SPEED]: (connection) => connection.downloadSpeed,
-  [SORT_TYPE.UPLOAD]: getConnectionUpload,
+  [SORT_TYPE.UPLOAD]: (connection) => getConnectionUpload(connection),
   [SORT_TYPE.UPLOAD_SPEED]: (connection) => connection.uploadSpeed,
-  [SORT_TYPE.SOURCE_IP]: getConnectionSourceIP,
-  [SORT_TYPE.TYPE]: getNetworkTypeFromConnection,
+  [SORT_TYPE.SOURCE_IP]: (connection) => getConnectionSourceIP(connection),
+  [SORT_TYPE.TYPE]: (connection) => getNetworkTypeFromConnection(connection),
   [SORT_TYPE.CONNECT_TIME]: (connection) => {
     // start 是 ISO 串
     const start = getConnectionStart(connection)
@@ -163,7 +165,7 @@ const sortKeyFunctionMap: Record<SORT_TYPE, (connection: Connection) => string |
 
     return Number.isNaN(parsed) ? 0 : parsed
   },
-  [SORT_TYPE.INBOUND_USER]: getInboundUserFromConnection,
+  [SORT_TYPE.INBOUND_USER]: (connection) => getInboundUserFromConnection(connection),
 }
 
 export const connections = computed(() => {

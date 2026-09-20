@@ -87,7 +87,7 @@
 
       <div class="flex justify-end gap-2">
         <button
-          class="btn btn-sm btn-outline"
+          class="btn btn-sm"
           @click="copyYaml"
         >
           {{ $t('copy') }}

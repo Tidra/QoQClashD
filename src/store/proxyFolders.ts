@@ -80,9 +80,8 @@ const defaultState = (): FolderState => ({
   seeded: false,
 })
 
-const folderState = useStorage<FolderState>('config/proxy-folders', defaultState(), localStorage, {
-  mergeDefaults: true,
-})
+// 文件夹状态持久化在后端 KV（与其余配置同一个库）。
+const folderState = useStorage<FolderState>('config/proxy-folders', defaultState())
 
 const seedDefaultFolders = () => {
   if (folderState.value.seeded) return

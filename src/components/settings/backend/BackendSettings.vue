@@ -58,6 +58,109 @@
           </div>
         </div>
 
+        <!-- Clash API 端口与密码由 agent 写进 active.yaml 的托管头，只在下次启动生效；
+             密码同时是面板登录密码（一处改，两端同步）。 -->
+        <div class="setting-item">
+          <div class="setting-item-label">
+            {{ $t('kernelApiPortLabel') }}
+            <div class="setting-item-summary">
+              {{ $t('kernelApiPortSummary') }}
+            </div>
+          </div>
+          <input
+            v-model="kernelApiPortInput"
+            type="text"
+            inputmode="numeric"
+            spellcheck="false"
+            class="input input-bordered input-sm w-24 font-mono"
+          />
+        </div>
+        <div
+          v-if="kernelApiDirty"
+          class="setting-item"
+        >
+          <div class="setting-item-label"></div>
+          <button
+            class="btn btn-sm btn-primary"
+            :disabled="kernelBusy"
+            @click="saveKernelApi"
+          >
+            {{ $t('saveKernelApi') }}
+          </button>
+        </div>
+
+        <!-- 密码只存在 agent 侧，浏览器既不回显也不比对：旧密码对不对由服务端说了算。 -->
+        <div class="setting-item">
+          <div class="setting-item-label">
+            {{ $t('kernelSharedSecretLabel') }}
+            <div class="setting-item-summary">
+              {{ $t('kernelSharedSecretSummary') }}
+            </div>
+          </div>
+          <button
+            v-if="!passwordFormOpen"
+            class="btn btn-sm btn-primary"
+            :disabled="kernelBusy"
+            @click="openPasswordForm"
+          >
+            {{ $t('kernelPasswordChange') }}
+          </button>
+        </div>
+        <template v-if="passwordFormOpen">
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('panelPasswordCurrent') }}</div>
+            <input
+              v-model="oldPasswordInput"
+              type="password"
+              autocomplete="current-password"
+              class="input input-bordered input-sm w-72 max-w-[55%]"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('panelPasswordNew') }}</div>
+            <input
+              v-model="newPasswordInput"
+              type="password"
+              autocomplete="new-password"
+              class="input input-bordered input-sm w-72 max-w-[55%]"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label">{{ $t('panelPasswordConfirm') }}</div>
+            <input
+              v-model="confirmPasswordInput"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="$t('panelPasswordConfirmPlaceholder')"
+              class="input input-bordered input-sm w-72 max-w-[55%]"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label"></div>
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-sm btn-primary"
+                :disabled="kernelBusy"
+                @click="savePanelPassword"
+              >
+                {{ $t('save') }}
+              </button>
+              <button
+                class="btn btn-sm btn-ghost"
+                @click="closePasswordForm"
+              >
+                {{ $t('cancel') }}
+              </button>
+              <span
+                v-if="passwordMismatch"
+                class="text-error text-xs"
+              >
+                {{ $t('panelPasswordMismatch') }}
+              </span>
+            </div>
+          </div>
+        </template>
+
         <div class="setting-item">
           <div class="setting-item-label">{{ $t('kernelDownloadRepo') }}</div>
           <SelectInput
@@ -145,7 +248,7 @@
         >
           <div class="setting-item-label"></div>
           <button
-            class="btn btn-sm btn-outline"
+            class="btn btn-sm btn-primary"
             :disabled="kernelBusy"
             @click="saveRuntimePaths"
           >
@@ -270,8 +373,8 @@
 </template>
 
 <script setup lang="ts">
-import { startBackendSession } from '@/assembly/session'
-import { isCoreUpdateAvailable, probeActiveBackend } from '@/assembly/version'
+import { startKernelSession, stopKernelSession } from '@/assembly/session'
+import { isCoreUpdateAvailable } from '@/assembly/version'
 import SelectInput from '@/components/common/SelectInput.vue'
 import type { SelectOption } from '@/components/common/SelectInput.vue'
 import DnsQuery from '@/components/settings/backend/DnsQuery.vue'
@@ -280,12 +383,13 @@ import { backendActions } from '@/composables/backendActions'
 import { useControlApi } from '@/composables/useControlApi'
 import { isSettingVisible, useIsSettingVisible } from '@/composables/settings'
 import {
+  restartKernelForSecret,
   startKernelAndReconnect,
-  syncKernelBackend,
   waitKernelRunning,
 } from '@/composables/useKernelBackend'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
-import { applyComposedConfig, pendingConfigChanges } from '@/helper/applyConfig'
+import { applyDraftConfig, applyingConfig, pendingConfigChanges } from '@/helper/applyConfig'
+import { changePanelPassword } from '@/helper/panelSession'
 import { notifyRequestError } from '@/helper/requestError'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
@@ -300,19 +404,6 @@ const k = BACKEND_ITEM_KEYS
 const showYamlViewer = ref(false)
 const controlApi = useControlApi()
 
-const applyingConfig = ref(false)
-const applyDraftConfig = async () => {
-  if (applyingConfig.value) return
-  applyingConfig.value = true
-  try {
-    await applyComposedConfig()
-    showNotification({ content: 'applyConfigSuccess', type: 'alert-success' })
-  } catch (error) {
-    notifyRequestError(error)
-  } finally {
-    applyingConfig.value = false
-  }
-}
 const runtimeInfo = ref<{
   root: string
   kernel: string
@@ -328,15 +419,23 @@ type KernelStateView = {
   version?: string
   binaryExists?: boolean
   installedVersion?: string
+  externalController: string
 }
-const kernelState = ref<KernelStateView>({ status: 'stopped' })
+const kernelState = ref<KernelStateView>({ status: 'stopped', externalController: '' })
 const releases = ref<{ versions: string[]; mirrors: string[] }>({ versions: [], mirrors: [] })
 const pinnedVersion = ref('')
 const downloadingKernel = ref(false)
 const lifecycleBusy = ref(false)
 const savingPaths = ref(false)
+const savingKernelApi = ref(false)
+const savingPassword = ref(false)
 const kernelBusy = computed(
-  () => downloadingKernel.value || lifecycleBusy.value || savingPaths.value,
+  () =>
+    downloadingKernel.value ||
+    lifecycleBusy.value ||
+    savingPaths.value ||
+    savingKernelApi.value ||
+    savingPassword.value,
 )
 const kernelMirror = useStorage<string>('config/kernel-mirror', 'direct')
 const kernelVersion = useStorage<string>('config/kernel-version', '')
@@ -397,10 +496,129 @@ const versionOptions = computed<SelectOption<string>[]>(() => {
   return options
 })
 
+// ── Clash API 端口 + 面板/内核共用密码 ─────────────────────────────
+// 状态每 5s 轮询一次，输入框不能被轮询覆盖，所以只在「用户没有未保存改动」时
+// 才把最新值回填进去（输入仍等于基线 = 无改动）。
+const kernelApiBaselinePort = ref('')
+const kernelApiPortInput = ref('')
+
+const portOfController = (address: string) => {
+  if (!address) return ''
+  const raw = address.startsWith('http') ? new URL(address).host : address
+  return raw.slice(raw.lastIndexOf(':') + 1)
+}
+
+const syncKernelApiFields = (state: KernelStateView) => {
+  const port = portOfController(state.externalController)
+  if (!port || kernelApiPortInput.value !== kernelApiBaselinePort.value) return
+  kernelApiBaselinePort.value = port
+  kernelApiPortInput.value = port
+}
+
+const kernelApiDirty = computed(() => kernelApiPortInput.value !== kernelApiBaselinePort.value)
+
+/** 下发一次 Clash API 端口改动；成功返回 true。内核在跑就顺手重启，托管头才会写进 active.yaml。 */
+const applyKernelApi = async (body: { port: number }, savedKey: string): Promise<boolean> => {
+  savingKernelApi.value = true
+  try {
+    const result = await controlApi.updateKernelApi(body)
+    if (!result.ok) {
+      showNotification({
+        content: result.error || 'kernelApiSaveFailed',
+        type: 'alert-error',
+      })
+      return false
+    }
+    // 保存成功：新值即新基线。不写回的话输入框永远停在「与基线不符」，保存行会一直挂着。
+    const port = portOfController(result.externalController ?? '') || String(body.port)
+    kernelApiBaselinePort.value = port
+    kernelApiPortInput.value = port
+    showNotification({ content: savedKey, type: 'alert-success' })
+    if (result.requiresRestart) {
+      await controlApi.restartKernel()
+      if (await waitKernelRunning()) startKernelSession()
+      else showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
+    }
+    return true
+  } catch (error) {
+    notifyRequestError(error)
+    return false
+  } finally {
+    savingKernelApi.value = false
+    await refreshKernelState()
+  }
+}
+
+const saveKernelApi = async () => {
+  if (kernelBusy.value) return
+  const portText = kernelApiPortInput.value.trim()
+  const port = Number(portText)
+  if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    showNotification({ content: 'kernelApiPortInvalid', type: 'alert-error' })
+    return
+  }
+  if (portText === kernelApiBaselinePort.value) return
+  await applyKernelApi({ port }, 'kernelApiSaved')
+}
+
+// ── 修改面板/内核共用密码：旧密码本地比对 + 新密码输入两次 ──────────
+const passwordFormOpen = ref(false)
+const oldPasswordInput = ref('')
+const newPasswordInput = ref('')
+const confirmPasswordInput = ref('')
+
+const openPasswordForm = () => {
+  oldPasswordInput.value = ''
+  newPasswordInput.value = ''
+  confirmPasswordInput.value = ''
+  passwordFormOpen.value = true
+}
+
+const closePasswordForm = () => {
+  passwordFormOpen.value = false
+}
+
+const passwordMismatch = computed(
+  () =>
+    !!newPasswordInput.value.trim() &&
+    newPasswordInput.value.trim() !== confirmPasswordInput.value.trim(),
+)
+
+const savePanelPassword = async () => {
+  if (kernelBusy.value) return
+  const next = newPasswordInput.value.trim()
+  if (!next) {
+    showNotification({ content: 'kernelApiSecretRequired', type: 'alert-error' })
+    return
+  }
+  if (passwordMismatch.value) {
+    showNotification({ content: 'panelPasswordMismatch', type: 'alert-error' })
+    return
+  }
+  savingPassword.value = true
+  try {
+    // 旧密码由 agent 比对：浏览器从没拿过它，本地比对无从谈起。
+    const result = await changePanelPassword(oldPasswordInput.value.trim(), next)
+    if (!result.ok) {
+      showNotification({ content: 'panelAuthMismatch', type: 'alert-error' })
+      return
+    }
+    showNotification({ content: 'kernelPasswordSaved', type: 'alert-success' })
+    closePasswordForm()
+    // 这个密码同时是内核的 Clash API secret，内核在跑时不重启就是拿新密码敲旧锁。
+    if (result.requiresRestart) await restartKernelForSecret()
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    savingPassword.value = false
+    await refreshKernelState()
+  }
+}
+
 const refreshKernelState = async () => {
   try {
     kernelState.value = await controlApi.getKernelStatus()
-    if (kernelState.value.status === 'running') void syncKernelBackend()
+    syncKernelApiFields(kernelState.value)
   } catch {
     // 控制服务不可达时保留上次状态，仅路径区显示断连提示
   }
@@ -499,7 +717,7 @@ const startOrRestartKernelAction = () =>
     if (kernelState.value.status === 'running') {
       await controlApi.restartKernel()
       reconnected = await waitKernelRunning()
-      if (reconnected) startBackendSession()
+      if (reconnected) startKernelSession()
     } else {
       reconnected = await startKernelAndReconnect()
     }
@@ -507,12 +725,12 @@ const startOrRestartKernelAction = () =>
       showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
     }
   })
-// 停完立刻重新探测：面板上所有显示内核状态的地方（侧边栏圆点、连接提示）
-// 跟着 backendProbe 翻成断连，而不是继续显示上一次的「正常」。
+// 停完就地结束会话：三条常驻流对着死端口只会无限重连，能力表也得退回空态，
+// 否则面板会继续显示上一轮内核的版本与「正常」。
 const stopKernelAction = () =>
   runKernelLifecycle(async () => {
     await controlApi.stopKernel()
-    probeActiveBackend()
+    stopKernelSession()
   })
 
 onMounted(async () => {

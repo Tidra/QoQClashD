@@ -1,31 +1,20 @@
 <script setup lang="ts">
-// 后端会话(内核探测 + 首屏数据 + 常驻流)自己跟着 activeBackend 走,
-// 这里只需保证模块被加载,不依赖任何页面挂载。
-import './assembly/session'
 import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
-import BackendConnectionError from './components/common/BackendConnectionError.vue'
-import BackendSwitchToast from './components/common/BackendSwitchToast.vue'
-import BackendManager from './components/settings/backend/BackendManager.vue'
 import UpgradeCoreModal from './components/settings/backend/UpgradeCoreModal.vue'
 import { useAppearanceVars } from './composables/useAppearanceVars'
-import { syncKernelBackend } from './composables/useKernelBackend'
+import { bootstrapKernelSession } from './composables/useKernelBackend'
 import { showUpgradeCoreModal } from './composables/backendActions'
 import ConfirmDialogHost from './components/common/ConfirmDialogHost.vue'
 import { useKeyboard } from './composables/keyboard'
-import { EMOJIS, FONTS } from './constant'
-import {
-  autoImportSettings,
-  autoSyncSettings,
-  importSettingsFromUrl,
-  syncSettingsFromCore,
-} from './helper/autoImportSettings'
+import { EMOJIS, FONTS, ROUTE_NAME } from './constant'
 import { backgroundImage } from './helper/indexeddb'
 import { initNotification } from './helper/notification'
-import { getBackendFromUrl, isPreferredDark } from './helper/utils'
+import { authStatus } from './helper/panelSession'
+import { unauthorizedCount } from './helper/unauthorized'
+import { isPreferredDark } from './helper/utils'
+import router from './router'
 import { disablePullToRefresh, emoji, font, theme } from './store/settings'
-import { addBackend, backendList, setActiveBackend } from './store/setup'
-import type { Backend } from './types'
 
 const app = ref<HTMLElement>()
 const toast = ref<HTMLElement>()
@@ -148,54 +137,27 @@ watch(
   },
 )
 
-const isSameBackend = (b1: Omit<Backend, 'uuid' | 'type'>, b2: Omit<Backend, 'uuid' | 'type'>) => {
-  return (
-    b1.host === b2.host &&
-    b1.port === b2.port &&
-    b1.password === b2.password &&
-    b1.protocol === b2.protocol &&
-    b1.secondaryPath === b2.secondaryPath &&
-    b1.disableUpgradeCore === b2.disableUpgradeCore &&
-    b1.disableTunMode === b2.disableTunMode
-  )
-}
+// 会话由服务端签发：登录状态一确定就接上内核。
+//   - authenticated 翻成 true（路由守卫拿到 /auth/status 的那一刻）→ running 就开
+//     数据会话，没在跑则送去内核设置页；
+//   - 任何一侧回 401（ky / axios / 存储读写）→ 作废本地快照并落回登录页。
+watch(
+  () => authStatus.value?.authenticated,
+  (authenticated) => {
+    if (authenticated) void bootstrapKernelSession()
+  },
+  // 路由守卫可能比本组件更早拿到 /auth/status，那时值不会再变，只有 immediate 能接上。
+  { immediate: true },
+)
 
-const autoSwitchToURLBackendIfExists = () => {
-  const backend = getBackendFromUrl()
+watch(unauthorizedCount, async () => {
+  if (!authStatus.value?.authenticated) return
+  authStatus.value = null
+  await router.replace({ name: ROUTE_NAME.setup })
+})
 
-  if (!backend) return
-
-  const existing = backendList.value.find((b) => isSameBackend(b, backend))
-  if (existing) {
-    setActiveBackend(existing.uuid)
-    return
-  }
-
-  // 这里是修复“旧的 activeUuid / 过期的本地保存状态”导致面板卡在错误后端的问题:
-  // 用户通过 URL 直接带着 hostname + port + secret 进入时,应该把它作为当前后端
-  // 立刻激活并写回 storage,而不是继续停留在 stale session 上。
-  const saved = addBackend(backend)
-  setActiveBackend(saved)
-}
-
-autoSwitchToURLBackendIfExists()
-
-onMounted(async () => {
+onMounted(() => {
   setThemeColor()
-  // 内核若已在运行（面板重启/刷新），自动登记为内置后端，免去手动配置。
-  void syncKernelBackend()
-
-  if (autoImportSettings.value) {
-    await importSettingsFromUrl()
-  }
-
-  if (autoSyncSettings.value) {
-    try {
-      await syncSettingsFromCore()
-    } catch (e) {
-      console.error('Failed to auto-sync settings on app load:', e)
-    }
-  }
 })
 
 useAppearanceVars()
@@ -214,10 +176,7 @@ useKeyboard()
     :style="[backgroundImage, { height: 'var(--app-height, 100dvh)' }]"
   >
     <RouterView />
-    <BackendSwitchToast />
-    <BackendConnectionError />
-    <BackendManager />
-    <!-- 后端维护动作的弹窗:侧边栏菜单和设置页都会拉起,挂在这里两处入口才都有效。 -->
+    <!-- 内核升级弹窗挂在根节点：设置页的动作按钮在别的组件树里，弹窗要跨路由存活。 -->
     <UpgradeCoreModal v-model="showUpgradeCoreModal" />
     <!--
       确认弹窗排在所有弹窗之后:它们都 teleport 到 #app-content 且同一层 z-index,

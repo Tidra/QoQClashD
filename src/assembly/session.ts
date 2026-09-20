@@ -1,33 +1,27 @@
-// 组装层 · 后端会话。
+// 组装层 · 内核会话。
 //
-// 一次会话 = 面板为某个后端建立起来的整套运行时状态:内核探测 + 首屏数据 +
-// 三条常驻流(connections / logs / traffic)。切后端、改当前后端的连接参数、
-// 用户手动重连,本质都是「结束旧会话、开一条新的」,所以共用 startBackendSession——
+// 一次会话 = 面板对着内置内核建立起来的整套运行时状态:版本探测 + 首屏数据 +
+// 三条常驻流(connections / logs / traffic)。启动 / 重启内核、用户手动重连,
+// 本质都是「结束旧会话、开一条新的」,所以共用 startKernelSession ——
 // 重连不需要额外的响应式开关,再调一次就是了。
 
 import { PROXY_TAB_TYPE, RULE_TAB_TYPE } from '@/constant'
 import { initConnections, stopConnections } from '@/store/connections'
 import { initSatistic, stopSatistic } from '@/store/overview'
-import { activeBackend } from '@/store/setup'
-import { watch } from 'vue'
 import { fetchConfigs } from './config'
 import { initLogs, stopLogs } from './logs'
 import { fetchProxies, proxiesTabShow } from './proxies'
 import { fetchRules, rulesTabShow } from './rules'
-import { probeActiveBackend } from './version'
+import { probeKernel, resetKernelProbe } from './version'
 
-export const startBackendSession = () => {
-  // 探测不 await:连通性提示要的正是「正在连接」这个中间态,数据流也不必等它。
-  probeActiveBackend()
-  // 三条常驻流连同各自的数据在这里先丢掉,不能留到下面重建时再清 ——
-  // 上一个后端的日志与统计会安静地冒充新后端的数据。
+export const startKernelSession = () => {
+  // 探测不 await:数据流不必等它,而 core 要等 /version 回来才有结论。
+  probeKernel()
+  // 三条常驻流连同各自的数据先丢掉,不能留到下面重建时再清 ——
+  // 旧内核的日志与统计会安静地冒充新内核的数据。
   stopConnections()
   stopLogs()
   stopSatistic()
-
-  // 后端被清空(登出 / 401 / 新增后端)时就停在这:常驻流上面已经关掉,
-  // 否则它们会以无主状态留在 Setup 页继续运行并无限重连。
-  if (!activeBackend.value) return
 
   rulesTabShow.value = RULE_TAB_TYPE.RULES
   proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
@@ -39,5 +33,13 @@ export const startBackendSession = () => {
   initSatistic()
 }
 
-// 会话跟着 activeBackend 走:换后端要重建,把当前后端的地址 / 密码改掉同样要重建。
-watch(activeBackend, startBackendSession, { immediate: true })
+/**
+ * 内核停掉时结束会话:三条流对着死端口只会无限重连,能力表和版本展示也要退回
+ * 「还没探测」的空态,而不是继续显示上一轮内核的结论。
+ */
+export const stopKernelSession = () => {
+  stopConnections()
+  stopLogs()
+  stopSatistic()
+  resetKernelProbe()
+}

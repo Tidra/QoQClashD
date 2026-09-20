@@ -1,48 +1,35 @@
-version: "3.9"
-
 services:
-  mihomo-core:
-    image: docker.io/dreamacro/mihomo:latest
-    container_name: mihomo-core
-    restart: unless-stopped
-    ports:
-      - "7890:7890"
-      - "9090:9090"
-    volumes:
-      - mihomo-data:/etc/mihomo
-    command: ["mihomo", "-d", "/etc/mihomo"]
-    networks:
-      - qoqclashd-network
-
   qoqclashd:
     build:
       context: .
-      dockerfile: Dockerfile.server
+      dockerfile: Dockerfile
     image: qoqclashd:local
     container_name: qoqclashd
     restart: unless-stopped
-    depends_on:
-      - mihomo-core
     ports:
-      - "8080:80"
+      # 面板 + /api/control + /api/mihomo 同源入口
+      - '8080:80'
+      # 内核主入口（mixed-port）。局域网其他设备要走代理时一并放开；
+      # Clash API 端口只在容器内使用，不需要对外发布。
+      - '7890:7890'
     environment:
-      API_HOST: http://mihomo-core:9090
-      API_SECRET: ${QOQCLASHD_API_SECRET:-}
-    networks:
-      - qoqclashd-network
-
+      PANEL_HOST: 0.0.0.0
+      PANEL_PORT: '80'
+      DATA_DIR: /app/data
+      CORE_STORAGE_DIR: /app/kernel
     volumes:
+      # qoqclashd.sqlite：面板密码、订阅、节点、规则；config/active.yaml：下发给内核的配置
       - qoqclashd-data:/app/data
+      # 面板自行下载的 mihomo 二进制与 GEO 库
       - qoqclashd-kernel:/app/kernel
+    # 开启内核 TUN 模式时取消注释
+    # cap_add:
+    #   - NET_ADMIN
+    # devices:
+    #   - /dev/net/tun
 
 volumes:
-  mihomo-data:
-    driver: local
   qoqclashd-data:
     driver: local
   qoqclashd-kernel:
     driver: local
-
-networks:
-  qoqclashd-network:
-    driver: bridge

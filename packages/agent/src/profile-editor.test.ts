@@ -11,13 +11,13 @@ function state() {
   return {
     status: 'running' as const,
     externalController: '127.0.0.1:9090',
-    secret: '',
   }
 }
 
 function supervisor(restart = vi.fn(async () => state())): MihomoSupervisor {
   return {
     getState: state,
+    getControllerSecret: () => '',
     start: vi.fn(async () => state()),
     stop: vi.fn(async () => state()),
     restart,

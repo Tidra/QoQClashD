@@ -25,7 +25,6 @@ import { showConfirmDialog } from '@/helper/confirmDialog'
 import { notifyActionPending, showNotification } from '@/helper/notification'
 import { notifyRequestError } from '@/helper/requestError'
 import { i18n } from '@/i18n'
-import { activeBackend } from '@/store/setup'
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -102,13 +101,11 @@ const runOnce = async (
   }
 }
 
-/** 当前后端/内核下真正能执行的动作,顺序即两处入口的展示顺序 */
+/** 当前内核下真正能执行的动作,顺序即两处入口的展示顺序 */
 export const backendActions = computed<BackendAction[]>(() => {
-  if (!activeBackend.value) return []
-
   const actions: BackendAction[] = []
 
-  if (can('coreUpgrade') && !activeBackend.value?.disableUpgradeCore) {
+  if (can('coreUpgrade')) {
     actions.push({
       key: k.upgradeCore,
       label: 'upgradeCore',

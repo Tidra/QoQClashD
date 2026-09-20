@@ -13,12 +13,16 @@ import {
   saveConnectionHistoryToIndexedDB,
   type ConnectionHistoryData,
 } from '@/helper/indexeddb'
+import { useStorage } from '@/helper/storage'
 import type { Connection } from '@/types'
 import ipaddr from 'ipaddr.js'
 import { shallowRef } from 'vue'
-import { activeBackend } from './setup'
 
-const uuid = () => activeBackend.value?.uuid || ''
+// 连接历史按这条 uuid 存在 IndexedDB 里。面板现在只有内置内核一个后端，但历史记录
+// 是按当年那条 uuid 落的，默认值换成别的会让旧历史看起来凭空消失 —— 水合后它会被
+// 存量值覆盖，不回写。
+const historyScope = useStorage<string>('setup/active-uuid', 'kernel')
+const uuid = () => historyScope.value
 const allHistoryTypes: ConnectionHistoryType[] = [
   ConnectionHistoryType.SourceIP,
   ConnectionHistoryType.Destination,

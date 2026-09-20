@@ -51,7 +51,6 @@ import {
 import type { ConnectionGroupableKey } from '@/constant'
 import { connectionCardGroupKey, connectionTabShow, renderConnections } from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
-import { activeUuid } from '@/store/setup'
 import type { Connection } from '@/types'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 import { computed, watch } from 'vue'
@@ -147,7 +146,7 @@ const listItems = computed<ConnectionCardListItem[]>(() => {
 })
 
 // 新分组默认折叠。
-watch([connectionCardGroupKey, connectionTabShow, activeUuid], resetConnectionCardGroups, {
+watch([connectionCardGroupKey, connectionTabShow], resetConnectionCardGroups, {
   flush: 'sync',
 })
 watch(groups, (nextGroups) => syncConnectionCardGroupIds(nextGroups.map((group) => group.id)), {

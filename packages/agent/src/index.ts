@@ -9,6 +9,8 @@ import { applyActiveRefresh } from './refresh-apply'
 import { createProfileScheduler } from './scheduler'
 import type { ScriptRunner } from './script'
 import { createScriptRunner } from './script'
+import type { PanelAuth } from './session'
+import { createSessionManager } from './session'
 import { createAgentStorage } from './storage'
 import type { CreateSupervisorOptions } from './supervisor'
 import { createSupervisor } from './supervisor'
@@ -46,12 +48,34 @@ export { createProfileScheduler } from './scheduler'
 export type { ProfileRefreshResult, ProfileScheduler, ProfileSchedulerDeps } from './scheduler'
 export { createScriptRunner } from './script'
 export type { CreateScriptRunnerOptions, ScriptRun, ScriptRunner } from './script'
+export {
+  createSessionManager,
+  readSessionCookie,
+  SESSION_COOKIE,
+  SESSION_MAX_AGE_SECONDS,
+} from './session'
+export type { AuthResult, PanelAuth, SessionManager } from './session'
 export { createSupervisor } from './supervisor'
 export type { CreateSupervisorOptions, SupervisorDeps } from './supervisor'
 export { buildTunConfig, TunPreconditionError } from './tun'
 export * from './types'
-export { createWebdavClient } from './webdav'
-export type { WebdavClient, WebdavClientOptions } from './webdav'
+
+/** 设置页可改的内核 Clash API 端口默认值（KV 与 env 都没给时）。 */
+export const DEFAULT_KERNEL_API_PORT = 9090
+
+/** PUT /kernel/api 的请求体：只有端口。密码归 /auth/password 管。 */
+export interface KernelApiPatch {
+  port?: number
+}
+
+export interface KernelApiResult {
+  ok: boolean
+  error?: string
+  externalController?: string
+  port?: number
+  // 内核正在跑时，改端口要重启才会写进 active.yaml。
+  requiresRestart?: boolean
+}
 
 export type CreateAgentOptions = CreateSupervisorOptions & {
   profilesDir: string
@@ -146,17 +170,35 @@ export function createAgent(opts: CreateAgentOptions) {
     scriptRunner: opts.scriptRunner ?? createScriptRunner(),
   })
   const dataDir = opts.dataDir?.trim() || process.env.DATA_DIR || join(persistedRoot, 'data')
+
+  // Clash API 的绑定主机来自 env API_HOST，端口则设置页可改（KV 持久化）。
+  // env 没给地址时按本机回环 + 默认端口，保证冷启动也有一个确定的默认值。
+  const splitController = (value: string) => {
+    const withScheme = value.startsWith('http') ? value : `http://${value}`
+    try {
+      const url = new URL(withScheme)
+      return { host: url.hostname || '127.0.0.1', port: Number(url.port) || undefined }
+    } catch {
+      return { host: '127.0.0.1', port: undefined }
+    }
+  }
+  const envController = splitController(opts.externalController ?? '')
+  const controllerAddress = (port: number) => `${envController.host}:${port}`
+  let kernelApiPort = envController.port ?? DEFAULT_KERNEL_API_PORT
+
   const storage = createAgentStorage(dataDir, {
     'setup/panel-password': opts.agentToken ?? '',
     'config/core-storage-dir': initialLayout.kernelDir,
     'config/config-dir': initialLayout.configDir,
     'config/runtime-root': persistedRoot,
+    'config/kernel-api-port': kernelApiPort,
   })
   let supervisor = createSupervisor({
     ...opts,
     binaryPath,
     homeDir: runtimeConfigDir,
     activeConfigPath: runtimeActiveConfigPath,
+    externalController: controllerAddress(kernelApiPort),
   })
   let profileEditor = createProfileConfigEditor({
     profiles,
@@ -172,16 +214,71 @@ export function createAgent(opts: CreateAgentOptions) {
     kernelDir: 'config/core-storage-dir',
     configDir: 'config/config-dir',
     installedVersion: 'config/kernel-installed-version',
+    apiPort: 'config/kernel-api-port',
+    // 面板登录密码 = 内核 Clash API secret，两处共用这一个值。
+    panelPassword: 'setup/panel-password',
   } as const
-  const readKvString = async (key: string) => {
+  const readKvRawString = async (key: string) => {
     const raw = await storage.get(key)
     if (raw == null) return undefined
     try {
       const parsed: unknown = JSON.parse(raw)
-      return typeof parsed === 'string' && parsed.trim() ? parsed : undefined
+      return typeof parsed === 'string' ? parsed : undefined
     } catch {
       return undefined
     }
+  }
+  const readKvString = async (key: string) => {
+    const value = await readKvRawString(key)
+    return value && value.trim() ? value : undefined
+  }
+  const readKvPort = async (key: string) => {
+    const raw = await storage.get(key)
+    if (raw == null) return undefined
+    try {
+      const value = Number(JSON.parse(raw))
+      return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  // ---- 面板登录：密码只存在 agent 与 KV 里，浏览器只拿一张签名会话 cookie ----
+  // 同步可读的缓存：cookie 校验发生在每个请求上，不能每次都 await 存储。
+  // init() 启动时灌入，之后只有 applyPanelPassword 会改它。
+  let panelPassword = ''
+  const sessions = createSessionManager(() => panelPassword)
+
+  /** 写入面板密码并推给内核（两者共用一个值）。返回内核是否需要重启才生效。 */
+  const applyPanelPassword = async (next: string) => {
+    panelPassword = next
+    await storage.set(KV.panelPassword, JSON.stringify(next))
+    supervisor.setController?.({ secret: next })
+    const state = supervisor.getState()
+    return state.status === 'running' || state.status === 'starting'
+  }
+
+  const auth: PanelAuth = {
+    needsSetup: () => !panelPassword,
+    async login(password) {
+      const trimmed = password.trim()
+      if (!panelPassword) {
+        // 首次运行：输入即新密码，创建完直接登录。
+        if (!trimmed) return { ok: false, error: 'password-required' }
+        return { ok: true, created: true, requiresRestart: await applyPanelPassword(trimmed) }
+      }
+      if (trimmed !== panelPassword) return { ok: false, error: 'invalid-password' }
+      return { ok: true }
+    },
+    async changePassword(current, next) {
+      // 没设过密码时不承认任何「旧密码」—— 那条路径属于首次创建，走 login。
+      if (!panelPassword || current.trim() !== panelPassword) {
+        return { ok: false, error: 'invalid-password' }
+      }
+      const candidate = next.trim()
+      if (!candidate) return { ok: false, error: 'password-required' }
+      return { ok: true, requiresRestart: await applyPanelPassword(candidate) }
+    },
   }
 
   const ensureKernel = async (options: EnsureKernelOptions = {}) => {
@@ -286,6 +383,25 @@ export function createAgent(opts: CreateAgentOptions) {
     return { ok: true, ...runtime() }
   }
 
+  // 设置页保存「Clash API 端口」。写 KV 并推进 supervisor 状态，active.yaml 的托管
+  // 头在下一次 spawn 才重写，所以内核正在跑时要重启才生效。
+  const updateClashApi = async (patch: KernelApiPatch): Promise<KernelApiResult> => {
+    if (patch.port === undefined) return { ok: false, error: 'port is required' }
+    if (!Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535) {
+      return { ok: false, error: 'port must be an integer between 1 and 65535' }
+    }
+    kernelApiPort = patch.port
+    await storage.set(KV.apiPort, JSON.stringify(patch.port))
+    supervisor.setController?.({ externalController: controllerAddress(patch.port) })
+    const state = supervisor.getState()
+    return {
+      ok: true,
+      externalController: state.externalController,
+      port: kernelApiPort,
+      requiresRestart: state.status === 'running' || state.status === 'starting',
+    }
+  }
+
   const kernelStatusExtras = async () => {
     const installedVersion = await readKvString(KV.installedVersion)
     return {
@@ -294,11 +410,13 @@ export function createAgent(opts: CreateAgentOptions) {
     }
   }
 
-  // 启动时应用设置页持久化过的目录（server 在 listen 前 await）。
+  // 启动时应用设置页持久化过的目录与 Clash API 端口/密码（server 在 listen 前 await）。
   const init = async () => {
-    const [kernelDir, configDir] = await Promise.all([
+    const [kernelDir, configDir, persistedPort, persistedSecret] = await Promise.all([
       readKvString(KV.kernelDir),
       readKvString(KV.configDir),
+      readKvPort(KV.apiPort),
+      readKvRawString(KV.panelPassword),
     ])
     const patch: { kernelDir?: string; configDir?: string } = {}
     if (kernelDir && kernelDir !== runtimeKernelDir) patch.kernelDir = kernelDir
@@ -306,6 +424,19 @@ export function createAgent(opts: CreateAgentOptions) {
     if (patch.kernelDir) mkdirSync(patch.kernelDir, { recursive: true })
     if (patch.configDir) mkdirSync(patch.configDir, { recursive: true })
     if (patch.kernelDir || patch.configDir) pointRuntimePaths(patch)
+
+    const controllerPatch: { externalController?: string; secret?: string } = {}
+    if (persistedPort && persistedPort !== kernelApiPort) {
+      kernelApiPort = persistedPort
+      controllerPatch.externalController = controllerAddress(persistedPort)
+    }
+    // 空字符串是有意义的取值（还没设密码 → 首屏落在创建密码那一步），只有 KV 完全
+    // 缺省时才沿用 env 兜底。会话 cookie 的签名密钥就是它，所以先灌进缓存。
+    panelPassword = persistedSecret ?? ''
+    if (persistedSecret !== undefined && persistedSecret !== supervisor.getControllerSecret()) {
+      controllerPatch.secret = persistedSecret
+    }
+    supervisor.setController?.(controllerPatch)
   }
 
   const info = (): AgentInfo => ({
@@ -323,7 +454,6 @@ export function createAgent(opts: CreateAgentOptions) {
       'logs-sse',
       'kernel-control',
       'geo-assets',
-      'webdav-backup',
       'runtime-config',
       'config-sections',
       'visual-config-editor',
@@ -333,28 +463,38 @@ export function createAgent(opts: CreateAgentOptions) {
     ],
   })
 
-  let router = createControlRouter({
-    supervisor,
-    profiles,
-    profileEditor,
-    info,
-    // Getters, not snapshots: applyRuntimePaths relocates these while the
-    // router instance stays alive (the server captures it once).
-    get homeDir() {
-      return runtimeConfigDir
-    },
-    get activeConfigPath() {
-      return runtimeActiveConfigPath
-    },
-    token: opts.agentToken,
-    systemProxy,
-    kernelManager,
-    tunController,
-    ensureKernel,
-    applyRuntimePaths,
-    kernelStatusExtras,
-    storage,
-  })
+  // 只有一个 router 依赖表：换运行目录时要重建 router，两处必须给同一份依赖，
+  // 所以收进工厂（原先 setRuntimeRoot 里另写了一份，漏了几个可选依赖）。
+  const buildRouter = () =>
+    createControlRouter({
+      supervisor,
+      profiles,
+      profileEditor,
+      info,
+      // Getters, not snapshots: applyRuntimePaths relocates these while the
+      // router instance stays alive (the server captures it once).
+      get homeDir() {
+        return runtimeConfigDir
+      },
+      get activeConfigPath() {
+        return runtimeActiveConfigPath
+      },
+      token: opts.agentToken,
+      systemProxy,
+      kernelManager,
+      tunController,
+      ensureKernel,
+      applyRuntimePaths,
+      updateClashApi,
+      kernelStatusExtras,
+      auth,
+      sessions,
+      storage,
+      // 工厂里的引用要延后求值：setRuntimeRoot 声明在这之后。
+      setRuntimeRoot: (root: string) => setRuntimeRoot(root),
+    })
+
+  let router = buildRouter()
 
   const scheduler = createProfileScheduler({
     profiles,
@@ -376,27 +516,16 @@ export function createAgent(opts: CreateAgentOptions) {
       binaryPath,
       homeDir: layout.configDir,
       activeConfigPath: layout.activeConfigPath,
+      // 端口/密码归设置页托管，换运行目录重建 supervisor 时不能退回 env 默认值。
+      externalController: controllerAddress(kernelApiPort),
+      secret: supervisor.getControllerSecret(),
     })
     profileEditor = createProfileConfigEditor({
       profiles,
       supervisor,
       homeDir: layout.configDir,
     })
-    router = createControlRouter({
-      supervisor,
-      profiles,
-      profileEditor,
-      info,
-      homeDir: layout.configDir,
-      activeConfigPath: layout.activeConfigPath,
-      token: opts.agentToken,
-      systemProxy,
-      kernelManager,
-      tunController,
-      ensureKernel,
-      setRuntimeRoot,
-      storage,
-    })
+    router = buildRouter()
 
     return {
       ok: true,
@@ -420,7 +549,11 @@ export function createAgent(opts: CreateAgentOptions) {
     kernelManager,
     tunController,
     ensureKernel,
+    updateClashApi,
     setRuntimeRoot,
     storage,
+    // 同源的 /api/mihomo 代理要过同一张会话 cookie 才放行（server 侧读它）。
+    sessions,
+    auth,
   }
 }

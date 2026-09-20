@@ -1,22 +1,24 @@
-import type { AddressInfo } from 'node:net'
-import type { KernelState, ProfileMeta } from './types'
+import { toNodeListener } from 'h3'
 import { Buffer } from 'node:buffer'
 import { mkdtempSync, readdirSync } from 'node:fs'
 import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { toNodeListener } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ControlRouterDeps } from './http'
 import { createControlRouter } from './http'
-import { SubscriptionFetchError } from './profiles'
 import { ProfileEditorConflictError } from './profile-editor'
+import { SubscriptionFetchError } from './profiles'
+import type { PanelAuth } from './session'
+import { createSessionManager } from './session'
 import { TunPreconditionError } from './tun'
+import type { KernelState, ProfileMeta } from './types'
 
 function fakeState(over: Partial<KernelState> = {}): KernelState {
   return {
     status: 'stopped',
     externalController: '127.0.0.1:9090',
-    secret: 'sek',
     ...over,
   }
 }
@@ -36,9 +38,8 @@ function makeDeps(token?: string) {
   const state = fakeState()
   const supervisor = {
     getState: vi.fn(() => state),
-    start: vi.fn(async () =>
-      fakeState({ status: 'running', pid: 1, version: '1.19.27' }),
-    ),
+    getControllerSecret: vi.fn(() => 'sek'),
+    start: vi.fn(async () => fakeState({ status: 'running', pid: 1, version: '1.19.27' })),
     stop: vi.fn(async () => fakeState({ status: 'stopped' })),
     restart: vi.fn(async () => fakeState({ status: 'running', pid: 2 })),
     validate: vi.fn(async () => ({ valid: true, message: 'ok' })),
@@ -46,9 +47,7 @@ function makeDeps(token?: string) {
     off: vi.fn(),
     dispose: vi.fn(),
   }
-  const profileList: ProfileMeta[] = [
-    { id: 'p1', name: 'home', type: 'local', updatedAt: 1 },
-  ]
+  const profileList: ProfileMeta[] = [{ id: 'p1', name: 'home', type: 'local', updatedAt: 1 }]
   const profiles = {
     list: vi.fn(async () => profileList),
     read: vi.fn(async () => 'mixed-port: 7890\n'),
@@ -104,13 +103,35 @@ function makeDeps(token?: string) {
     kernel: { bundled: true, path: '/bin/mihomo', version: '1.19.27' },
     features: ['profiles', 'logs-sse', 'kernel-control'],
   }))
+  const kv = new Map([
+    ['config/theme', '"dark"'],
+    ['config/api-port', '"9090"'],
+    ['nodePools', '[]'],
+  ])
+  const storage = {
+    get: vi.fn(async (key: string) => kv.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => {
+      kv.set(key, value)
+    }),
+    putMany: vi.fn(async (values: Record<string, string>) => {
+      for (const [key, value] of Object.entries(values)) kv.set(key, value)
+    }),
+    list: vi.fn(async (prefix: string) =>
+      Object.fromEntries([...kv].filter(([key]) => key.startsWith(prefix))),
+    ),
+    delete: vi.fn(async (key: string) => {
+      kv.delete(key)
+    }),
+  }
   const homeDir = mkdtempSync(join(tmpdir(), 'mcxd-http-'))
   const activeConfigPath = join(homeDir, 'active.yaml')
-  return { supervisor, profiles, info, homeDir, activeConfigPath, token }
+  return { supervisor, profiles, info, storage, homeDir, activeConfigPath, token }
 }
 
-async function mount(deps: ReturnType<typeof makeDeps>) {
-  const app = createControlRouter(deps as never)
+// extra：只给少数用例注入可选依赖（auth/sessions/updateClashApi），不掺进 makeDeps
+// 的返回类型，否则那些 vi.fn() 的 mock 方法就从类型上消失了。
+async function mount(deps: ReturnType<typeof makeDeps>, extra: Partial<ControlRouterDeps> = {}) {
+  const app = createControlRouter({ ...deps, ...extra } as never)
   const server = createServer(toNodeListener(app))
   await new Promise<void>((r) => server.listen(0, r))
   const { port } = server.address() as AddressInfo
@@ -152,9 +173,7 @@ describe('createControlRouter — info + kernel + auth', () => {
       headers: { Authorization: 'Bearer tok' },
     })
     expect(res.status).toBe(200)
-    expect(((await res.json()) as Record<string, unknown>).status).toBe(
-      'stopped',
-    )
+    expect(((await res.json()) as Record<string, unknown>).status).toBe('stopped')
   })
 
   it('wrong Bearer returns 401', async () => {
@@ -171,30 +190,127 @@ describe('createControlRouter — info + kernel + auth', () => {
     expect(res.status).toBe(200)
   })
 
+  it('gET kernel/status reports secretSet, never the plaintext secret', async () => {
+    srv = await mount(makeDeps())
+    const res = await fetch(`${srv.base}/api/control/kernel/status`)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.secretSet).toBe(true)
+    expect('secret' in body).toBe(false)
+  })
+
+  it('gET storage/kv?prefix= returns just that prefix', async () => {
+    srv = await mount(makeDeps())
+    const res = await fetch(`${srv.base}/api/control/storage/kv?prefix=config/`)
+    expect(await res.json()).toEqual({
+      entries: { 'config/theme': '"dark"', 'config/api-port': '"9090"' },
+    })
+  })
+
+  it('gET storage/kv?prefix= with an empty prefix returns the whole database', async () => {
+    srv = await mount(makeDeps())
+    // 导出走的就是这一条：prefix 只要出现就走列表分支，空串不能被当成缺参数。
+    const res = await fetch(`${srv.base}/api/control/storage/kv?prefix=`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      entries: { 'config/theme': '"dark"', 'config/api-port': '"9090"', nodePools: '[]' },
+    })
+  })
+
+  it('pUT storage/kv entries writes the whole batch in one call', async () => {
+    const deps = makeDeps()
+    srv = await mount(deps)
+    const res = await fetch(`${srv.base}/api/control/storage/kv`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        entries: { 'config/theme': '"light"', 'config/new-key': '"1"' },
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(deps.storage.putMany).toHaveBeenCalledWith({
+      'config/theme': '"light"',
+      'config/new-key': '"1"',
+    })
+  })
+
+  it('pUT storage/kv rejects a batch with no string values', async () => {
+    const deps = makeDeps()
+    srv = await mount(deps)
+    const res = await fetch(`${srv.base}/api/control/storage/kv`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entries: { 'config/theme': 42 } }),
+    })
+    expect(res.status).toBe(400)
+    expect(deps.storage.putMany).not.toHaveBeenCalled()
+  })
+
+  // 面板密码 = 内核 Clash API secret，浏览器只该签发会话、永不该读写它。
+  it('gET storage/kv never leaks credential keys', async () => {
+    const deps = makeDeps()
+    await deps.storage.set('setup/panel-password', '"1234"')
+    srv = await mount(deps)
+    const all = await fetch(`${srv.base}/api/control/storage/kv?prefix=`)
+    expect(Object.keys((await all.json()).entries)).not.toContain('setup/panel-password')
+    const single = await fetch(`${srv.base}/api/control/storage/kv?key=setup%2Fpanel-password`)
+    expect((await single.json()).value).toBeNull()
+  })
+
+  it('pUT storage/kv refuses batches that carry credentials', async () => {
+    const deps = makeDeps()
+    srv = await mount(deps)
+    const res = await fetch(`${srv.base}/api/control/storage/kv`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        entries: { 'config/theme': '"light"', 'setup/panel-password': '"evil"' },
+      }),
+    })
+    expect(res.status).toBe(400)
+    // 整批一起拒：只偷偷剔掉凭证键会把「导入没生效」变成静默的半截写入。
+    expect(deps.storage.putMany).not.toHaveBeenCalled()
+  })
+
+  it('pUT storage/kv refuses a single credential key', async () => {
+    const deps = makeDeps()
+    srv = await mount(deps)
+    const res = await fetch(`${srv.base}/api/control/storage/kv`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'setup/panel-password', value: '"evil"' }),
+    })
+    expect(res.status).toBe(400)
+    expect(deps.storage.set).not.toHaveBeenCalled()
+  })
+
+  it('dELETE storage/kv refuses to drop the panel password', async () => {
+    const deps = makeDeps()
+    srv = await mount(deps)
+    const res = await fetch(`${srv.base}/api/control/storage/kv?key=setup%2Fpanel-password`, {
+      method: 'DELETE',
+    })
+    expect(res.status).toBe(400)
+    expect(deps.storage.delete).not.toHaveBeenCalled()
+  })
+
   it('pOST kernel start/stop/restart return KernelState', async () => {
     const deps = makeDeps()
     srv = await mount(deps)
     const start = await fetch(`${srv.base}/api/control/kernel/start`, {
       method: 'POST',
     })
-    expect(((await start.json()) as Record<string, unknown>).status).toBe(
-      'running',
-    )
+    expect(((await start.json()) as Record<string, unknown>).status).toBe('running')
     expect(deps.supervisor.start).toHaveBeenCalledOnce()
 
     const stop = await fetch(`${srv.base}/api/control/kernel/stop`, {
       method: 'POST',
     })
-    expect(((await stop.json()) as Record<string, unknown>).status).toBe(
-      'stopped',
-    )
+    expect(((await stop.json()) as Record<string, unknown>).status).toBe('stopped')
 
     const restart = await fetch(`${srv.base}/api/control/kernel/restart`, {
       method: 'POST',
     })
-    expect(((await restart.json()) as Record<string, unknown>).status).toBe(
-      'running',
-    )
+    expect(((await restart.json()) as Record<string, unknown>).status).toBe('running')
   })
 })
 
@@ -328,17 +444,12 @@ describe('createControlRouter — profiles + SSE', () => {
       body: JSON.stringify({ url: 'https://sub', name: 'sub' }),
     })
     expect(((await res.json()) as Record<string, unknown>).type).toBe('remote')
-    expect(deps.profiles.importFromUrl).toHaveBeenCalledWith(
-      'https://sub',
-      'sub',
-    )
+    expect(deps.profiles.importFromUrl).toHaveBeenCalledWith('https://sub', 'sub')
   })
 
   it('pOST /api/control/profiles/import preserves an upstream 429 response (#2138)', async () => {
     const deps = makeDeps()
-    deps.profiles.importFromUrl.mockRejectedValue(
-      new SubscriptionFetchError(429),
-    )
+    deps.profiles.importFromUrl.mockRejectedValue(new SubscriptionFetchError(429))
     srv = await mount(deps)
     const res = await fetch(`${srv.base}/api/control/profiles/import`, {
       method: 'POST',
@@ -387,10 +498,9 @@ describe('createControlRouter — profiles + SSE', () => {
   it('pOST /profiles/:id/refresh-and-activate refreshes, activates (validates), and restarts (#2108)', async () => {
     const deps = makeDeps()
     srv = await mount(deps)
-    const res = await fetch(
-      `${srv.base}/api/control/profiles/p1/refresh-and-activate`,
-      { method: 'POST' },
-    )
+    const res = await fetch(`${srv.base}/api/control/profiles/p1/refresh-and-activate`, {
+      method: 'POST',
+    })
     expect(res.status).toBe(200)
     expect(deps.profiles.refresh).toHaveBeenCalledWith('p1')
     expect(deps.profiles.setActive).toHaveBeenCalledWith('p1')
@@ -413,10 +523,9 @@ describe('createControlRouter — profiles + SSE', () => {
       message: 'parse error near line 3',
     }))
     srv = await mount(deps)
-    const res = await fetch(
-      `${srv.base}/api/control/profiles/p1/refresh-and-activate`,
-      { method: 'POST' },
-    )
+    const res = await fetch(`${srv.base}/api/control/profiles/p1/refresh-and-activate`, {
+      method: 'POST',
+    })
     expect(res.status).toBe(400)
     // New (bad) candidate composed, then prior profile restored.
     expect(deps.profiles.setActive).toHaveBeenCalledWith('p1')
@@ -480,9 +589,7 @@ describe('createControlRouter — profiles + SSE', () => {
     expect(deps.profiles.setActive).toHaveBeenCalledWith('p1')
     expect(deps.supervisor.validate).toHaveBeenCalledWith(deps.activeConfigPath)
     expect(deps.supervisor.restart).toHaveBeenCalledOnce()
-    expect(((await res.json()) as Record<string, unknown>).status).toBe(
-      'running',
-    )
+    expect(((await res.json()) as Record<string, unknown>).status).toBe('running')
   })
 
   it('pOST /api/control/profiles/:id/activate returns 400 + restores prior active when validation fails (#2109)', async () => {
@@ -552,11 +659,9 @@ describe('createControlRouter — profiles + SSE', () => {
       resetManagedOverlay: vi.fn(async () => undefined),
     }
     srv = await mount({ ...deps, profileEditor } as never)
-    expect(
-      await fetch(`${srv.base}/api/control/profiles/p1/editor`).then(
-        (r) => r.status,
-      ),
-    ).toBe(200)
+    expect(await fetch(`${srv.base}/api/control/profiles/p1/editor`).then((r) => r.status)).toBe(
+      200,
+    )
     const body = {
       patch: { version: 1, baseRevision: 'rev', operations: [] },
     }
@@ -620,8 +725,7 @@ describe('createControlRouter — profiles + SSE', () => {
   it('gET /api/control/kernel/logs streams text/event-stream and pushes a state event', async () => {
     const deps = makeDeps()
     // Capture the registered 'log' callback so we can drive a fake log line.
-    let logCb:
-      ((l: { stream: string; line: string; ts: number }) => void) | undefined
+    let logCb: ((l: { stream: string; line: string; ts: number }) => void) | undefined
     deps.supervisor.on = vi.fn((event: string, cb: never) => {
       if (event === 'log') logCb = cb as never
     }) as never
@@ -696,9 +800,7 @@ describe('createControlRouter — system proxy', () => {
       }),
     })
     expect(res.status).toBe(200)
-    expect(deps.systemProxy.setAutoProxy).toHaveBeenCalledWith(
-      'http://127.0.0.1:7890/proxy.pac',
-    )
+    expect(deps.systemProxy.setAutoProxy).toHaveBeenCalledWith('http://127.0.0.1:7890/proxy.pac')
     expect(deps.systemProxy.enable).not.toHaveBeenCalled()
     expect(deps.systemProxy.disableAutoProxy).not.toHaveBeenCalled()
   })
@@ -812,9 +914,7 @@ describe('createControlRouter — geo assets', () => {
     // It fetched three assets and wrote them under homeDir.
     expect(requested).toHaveLength(3)
     const written = readdirSync(deps.homeDir)
-    expect(written).toEqual(
-      expect.arrayContaining(['geoip.dat', 'geosite.dat', 'country.mmdb']),
-    )
+    expect(written).toEqual(expect.arrayContaining(['geoip.dat', 'geosite.dat', 'country.mmdb']))
   })
 })
 
@@ -1024,229 +1124,17 @@ describe('createControlRouter — tun', () => {
   })
 })
 
-describe('createControlRouter — WebDAV backup/restore', () => {
-  let srv: Awaited<ReturnType<typeof mount>>
-  afterEach(async () => srv?.close())
-
-  function makeWebdav() {
-    const calls: { put: [string, string][]; get: string[]; mkcol: string[] } = {
-      put: [],
-      get: [],
-      mkcol: [],
-    }
-    let stored = ''
-    const client = {
-      put: vi.fn(async (path: string, body: string) => {
-        calls.put.push([path, body])
-        stored = body
-      }),
-      get: vi.fn(async (path: string) => {
-        calls.get.push(path)
-        return stored
-      }),
-      mkcol: vi.fn(async (dir: string) => {
-        calls.mkcol.push(dir)
-      }),
-    }
-    const opts: unknown[] = []
-    const createWebdavClient = vi.fn((o: unknown) => {
-      opts.push(o)
-      return client
-    })
-    return { client, calls, opts, createWebdavClient }
-  }
-
-  it('pOST /backup builds a bundle of all profiles and uploads it via webdav', async () => {
-    const dav = makeWebdav()
-    const deps = {
-      ...makeDeps(),
-      createWebdavClient: dav.createWebdavClient,
-    }
-    srv = await mount(deps as never)
-
-    const res = await fetch(`${srv.base}/api/control/backup`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        webdav: {
-          url: 'https://dav/',
-          username: 'u',
-          password: 'p',
-          dir: 'mcxd',
-        },
-        uiSettings: { theme: 'dark' },
-      }),
-    })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.ok).toBe(true)
-    expect(body.path).toBe('mcxd/metacubexd-backup.json')
-
-    // Client constructed with the request credentials.
-    expect(dav.opts[0]).toMatchObject({
-      url: 'https://dav/',
-      username: 'u',
-      password: 'p',
-    })
-    // mkcol best-effort on the dir, then put the bundle.
-    expect(dav.calls.mkcol).toEqual(['mcxd'])
-    expect(dav.calls.put).toHaveLength(1)
-    const [putPath, putBody] = dav.calls.put[0]!
-    expect(putPath).toBe('mcxd/metacubexd-backup.json')
-    const bundle = JSON.parse(putBody) as Record<string, unknown>
-    expect(bundle.version).toBe(1)
-    expect(bundle.uiSettings).toEqual({ theme: 'dark' })
-    expect(bundle.profiles).toEqual([
-      {
-        meta: { id: 'p1', name: 'home', type: 'local', updatedAt: 1 },
-        content: 'mixed-port: 7890\n',
-      },
-    ])
-  })
-
-  it('pOST /backup tolerates a failing mkcol (best-effort) and still uploads', async () => {
-    const dav = makeWebdav()
-    dav.client.mkcol = vi.fn(async () => {
-      throw new Error('mkcol boom')
-    })
-    const deps = {
-      ...makeDeps(),
-      createWebdavClient: dav.createWebdavClient,
-    }
-    srv = await mount(deps as never)
-
-    const res = await fetch(`${srv.base}/api/control/backup`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        webdav: { url: 'https://dav/', username: 'u', password: 'p' },
-      }),
-    })
-    expect(res.status).toBe(200)
-    expect(dav.calls.put).toHaveLength(1)
-    // No dir provided -> bundle lands at the root.
-    expect(dav.calls.put[0]![0]).toBe('metacubexd-backup.json')
-  })
-
-  it('pOST /restore re-creates profiles from the bundle and returns uiSettings', async () => {
-    const dav = makeWebdav()
-    const bundle = {
-      version: 1,
-      profiles: [
-        {
-          meta: { id: 'x1', name: 'restored', type: 'local', updatedAt: 9 },
-          content: 'port: 1234\n',
-        },
-        {
-          meta: {
-            id: 'x2',
-            name: 'sub',
-            type: 'remote',
-            url: 'https://s',
-            updatedAt: 10,
-          },
-          content: 'proxies: []\n',
-        },
-        {
-          meta: { id: 'x3', name: 'ov', type: 'merge', updatedAt: 11 },
-          content: 'append-rules:\n  - MATCH,DIRECT\n',
-        },
-        {
-          meta: { id: 'x4', name: 'tweak', type: 'script', updatedAt: 12 },
-          content: 'module.exports = (c) => c\n',
-        },
-      ],
-      uiSettings: { lang: 'zh' },
-    }
-    dav.client.get = vi.fn(async () => JSON.stringify(bundle))
-
-    const deps = {
-      ...makeDeps(),
-      createWebdavClient: dav.createWebdavClient,
-    }
-    srv = await mount(deps as never)
-
-    const res = await fetch(`${srv.base}/api/control/restore`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        webdav: {
-          url: 'https://dav/',
-          username: 'u',
-          password: 'p',
-          dir: 'mcxd',
-        },
-      }),
-    })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.ok).toBe(true)
-    expect(body.restored).toBe(4)
-    expect(body.uiSettings).toEqual({ lang: 'zh' })
-
-    // Downloads the bundle from the same path the backup writes.
-    expect(dav.client.get).toHaveBeenCalledWith('mcxd/metacubexd-backup.json')
-    // Recreates via profiles.create (new ids — avoids clashes), passing name/content/type.
-    expect(deps.profiles.create).toHaveBeenCalledTimes(4)
-    expect(deps.profiles.create).toHaveBeenCalledWith({
-      name: 'restored',
-      content: 'port: 1234\n',
-      type: 'local',
-    })
-    // 'remote' is restored as 'local' (keep content, no re-fetch)...
-    expect(deps.profiles.create).toHaveBeenCalledWith({
-      name: 'sub',
-      content: 'proxies: []\n',
-      type: 'local',
-    })
-    // ...but composition types (merge/script) are preserved so they still apply.
-    expect(deps.profiles.create).toHaveBeenCalledWith({
-      name: 'ov',
-      content: 'append-rules:\n  - MATCH,DIRECT\n',
-      type: 'merge',
-    })
-    expect(deps.profiles.create).toHaveBeenCalledWith({
-      name: 'tweak',
-      content: 'module.exports = (c) => c\n',
-      type: 'script',
-    })
-  })
-
-  it('pOST /backup surfaces a webdav put failure (no silent swallow)', async () => {
-    const dav = makeWebdav()
-    dav.client.put = vi.fn(async () => {
-      throw new Error('webdav PUT failed 403')
-    })
-    const deps = {
-      ...makeDeps(),
-      createWebdavClient: dav.createWebdavClient,
-    }
-    srv = await mount(deps as never)
-
-    const res = await fetch(`${srv.base}/api/control/backup`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        webdav: { url: 'https://dav/', username: 'u', password: 'p' },
-      }),
-    })
-    expect(res.status).toBeGreaterThanOrEqual(500)
-  })
-})
-
 describe('createControlRouter — runtime config viewer', () => {
   let srv: Awaited<ReturnType<typeof mount>>
   afterEach(async () => srv?.close())
 
   it('gET /api/control/config/runtime returns the activeConfigPath file as text/yaml', async () => {
-    const runtimeYaml =
-      'mixed-port: 7890\nexternal-controller: 127.0.0.1:9090\nsecret: sek\n'
+    const runtimeYaml = 'mixed-port: 7890\nexternal-controller: 127.0.0.1:9090\nsecret: sek\n'
     const readFile = vi.fn(async () => runtimeYaml)
     const deps = {
       ...makeDeps(),
       activeConfigPath: '/home/active.yaml',
-      readFile:
-        readFile as unknown as typeof import('node:fs/promises').readFile,
+      readFile: readFile as unknown as typeof import('node:fs/promises').readFile,
     }
     srv = await mount(deps as never)
     const res = await fetch(`${srv.base}/api/control/config/runtime`)
@@ -1266,8 +1154,7 @@ describe('createControlRouter — runtime config viewer', () => {
     const deps = {
       ...makeDeps(),
       activeConfigPath: '/home/missing.yaml',
-      readFile:
-        readFile as unknown as typeof import('node:fs/promises').readFile,
+      readFile: readFile as unknown as typeof import('node:fs/promises').readFile,
     }
     srv = await mount(deps as never)
     const res = await fetch(`${srv.base}/api/control/config/runtime`)
@@ -1320,14 +1207,10 @@ describe('createControlRouter — config sections', () => {
       body: JSON.stringify({ key: 'rules', value: ['MATCH,REJECT'] }),
     })
     expect(res.status).toBe(200)
-    expect(deps.profiles.setSection).toHaveBeenCalledWith('p1', 'rules', [
-      'MATCH,REJECT',
-    ])
+    expect(deps.profiles.setSection).toHaveBeenCalledWith('p1', 'rules', ['MATCH,REJECT'])
     expect(deps.profiles.setActive).toHaveBeenCalledWith('p1')
     expect(deps.supervisor.restart).toHaveBeenCalledOnce()
-    expect(((await res.json()) as Record<string, unknown>).status).toBe(
-      'running',
-    )
+    expect(((await res.json()) as Record<string, unknown>).status).toBe('running')
   })
 
   it('pUT /api/control/config/section with restart:false persists WITHOUT restarting', async () => {
@@ -1340,11 +1223,7 @@ describe('createControlRouter — config sections', () => {
       body: JSON.stringify({ key: 'allow-lan', value: true, restart: false }),
     })
     expect(res.status).toBe(200)
-    expect(deps.profiles.setSection).toHaveBeenCalledWith(
-      'p1',
-      'allow-lan',
-      true,
-    )
+    expect(deps.profiles.setSection).toHaveBeenCalledWith('p1', 'allow-lan', true)
     expect(deps.profiles.setActive).toHaveBeenCalledWith('p1')
     // The field was already hot-applied by the client's PATCH /configs — no
     // restart, so live connections survive while the change is persisted.
@@ -1379,5 +1258,182 @@ describe('createControlRouter — config sections', () => {
     expect(await res.json()).toEqual({ error: 'no active profile' })
     expect(deps.profiles.setSection).not.toHaveBeenCalled()
     expect(deps.supervisor.restart).not.toHaveBeenCalled()
+  })
+})
+
+// ---- Panel auth: session cookie wiring ----
+// 密码语义在 index.test.ts 里测真实的 agent.auth；这里只验路由与 cookie 的接法，
+// 所以给一个能改密码的假 auth，配上真实的签名 SessionManager。
+function makeAuthFixture(initial = '') {
+  let password = initial
+  const sessions = createSessionManager(() => password)
+  const auth: PanelAuth = {
+    needsSetup: () => !password,
+    async login(input) {
+      const trimmed = input.trim()
+      if (!password) {
+        if (!trimmed) return { ok: false, error: 'password-required' as const }
+        password = trimmed
+        return { ok: true, created: true }
+      }
+      if (trimmed !== password) return { ok: false, error: 'invalid-password' as const }
+      return { ok: true }
+    },
+    async changePassword(current, next) {
+      if (!password || current.trim() !== password) {
+        return { ok: false, error: 'invalid-password' as const }
+      }
+      if (!next.trim()) return { ok: false, error: 'password-required' as const }
+      password = next.trim()
+      return { ok: true, requiresRestart: true }
+    },
+  }
+  return { auth, sessions }
+}
+
+function setCookies(res: Response): string[] {
+  return (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? []
+}
+
+function sessionCookie(res: Response): string {
+  const name = 'qoqclashd_session='
+  const raw = setCookies(res).find((c) => c.startsWith(name)) ?? ''
+  return decodeURIComponent(raw.split(';')[0].slice(name.length))
+}
+
+describe('createControlRouter — panel auth', () => {
+  // 一个用例可能起两台（换密码那台跑完就没人关了），所以登记表统一在这里收。
+  const servers: Awaited<ReturnType<typeof mount>>[] = []
+  const serve = async (deps: ReturnType<typeof makeDeps>, extra?: Partial<ControlRouterDeps>) => {
+    const instance = await mount(deps, extra)
+    servers.push(instance)
+    return instance
+  }
+  afterEach(async () => {
+    while (servers.length) await servers.pop()?.close()
+  })
+
+  const login = (base: string, password: string) =>
+    fetch(`${base}/api/control/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+
+  it('aWT h /auth/status is public and reports needsSetup', async () => {
+    const srv = await serve(makeDeps(), makeAuthFixture())
+    const res = await fetch(`${srv.base}/api/control/auth/status`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ needsSetup: true, authenticated: false })
+  })
+
+  it('protected routes 401 without a session even when no token is set', async () => {
+    const srv = await serve(makeDeps(), makeAuthFixture('1234'))
+    const res = await fetch(`${srv.base}/api/control/kernel/status`)
+    expect(res.status).toBe(401)
+  })
+
+  it('first login creates the password, issues an httpOnly 7-day cookie, and unlocks routes', async () => {
+    const srv = await serve(makeDeps(), makeAuthFixture())
+    const res = await login(srv.base, '1234')
+    expect(await res.json()).toEqual({ ok: true, created: true })
+    const cookie = setCookies(res)[0] ?? ''
+    expect(cookie).toContain('Max-Age=604800')
+    expect(cookie).toContain('HttpOnly')
+    expect(cookie).toContain('SameSite=Lax')
+
+    const value = sessionCookie(res)
+    expect(value).not.toBe('')
+    const status = await fetch(`${srv.base}/api/control/kernel/status`, {
+      headers: { cookie: `qoqclashd_session=${value}` },
+    })
+    expect(status.status).toBe(200)
+  })
+
+  it('lOG POST /auth/login with a wrong password says so without issuing a cookie', async () => {
+    const srv = await serve(makeDeps(), makeAuthFixture('1234'))
+    const res = await login(srv.base, 'nope')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: false, error: 'invalid-password' })
+    expect(setCookies(res)).toEqual([])
+  })
+
+  it('sETTING a new password rotates the key: the old cookie stops working, the response carries a new one', async () => {
+    const fixture = makeAuthFixture('1234')
+    const srv = await serve(makeDeps(), fixture)
+    const old = sessionCookie(await login(srv.base, '1234'))
+
+    const bad = await fetch(`${srv.base}/api/control/auth/password`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: `qoqclashd_session=${old}` },
+      body: JSON.stringify({ currentPassword: 'nope', newPassword: '5678' }),
+    })
+    expect(await bad.json()).toEqual({ ok: false, error: 'invalid-password' })
+
+    const changed = await fetch(`${srv.base}/api/control/auth/password`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: `qoqclashd_session=${old}` },
+      body: JSON.stringify({ currentPassword: '1234', newPassword: '5678' }),
+    })
+    expect(await changed.json()).toEqual({ ok: true, requiresRestart: true })
+    const fresh = sessionCookie(changed)
+    expect(fresh).not.toBe(old)
+
+    expect(
+      (
+        await fetch(`${srv.base}/api/control/kernel/status`, {
+          headers: { cookie: `qoqclashd_session=${old}` },
+        })
+      ).status,
+    ).toBe(401)
+    expect(
+      (
+        await fetch(`${srv.base}/api/control/kernel/status`, {
+          headers: { cookie: `qoqclashd_session=${fresh}` },
+        })
+      ).status,
+    ).toBe(200)
+  })
+
+  it('lOGOUT expires the cookie and /auth/password itself requires a session', async () => {
+    const srv = await serve(makeDeps(), makeAuthFixture('1234'))
+    const value = sessionCookie(await login(srv.base, '1234'))
+
+    const noSession = await fetch(`${srv.base}/api/control/auth/password`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currentPassword: '1234', newPassword: '5678' }),
+    })
+    expect(noSession.status).toBe(401)
+
+    const out = await fetch(`${srv.base}/api/control/auth/logout`, {
+      method: 'POST',
+      headers: { cookie: `qoqclashd_session=${value}` },
+    })
+    expect(out.status).toBe(200)
+    expect(setCookies(out).some((c) => c.includes('Max-Age=0'))).toBe(true)
+  })
+
+  it('PUT /kernel/api 只认端口，不再接受 secret', async () => {
+    const updateClashApi = vi.fn(async () => ({ ok: true, port: 9099 }))
+    const srv = await serve(makeDeps(), { ...makeAuthFixture('1234'), updateClashApi })
+    const value = sessionCookie(await login(srv.base, '1234'))
+    const headers = { 'content-type': 'application/json', cookie: `qoqclashd_session=${value}` }
+
+    const secretOnly = await fetch(`${srv.base}/api/control/kernel/api`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ secret: 'nope' }),
+    })
+    expect(secretOnly.status).toBe(400)
+    expect(updateClashApi).not.toHaveBeenCalled()
+
+    const port = await fetch(`${srv.base}/api/control/kernel/api`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ port: 9099 }),
+    })
+    expect(port.status).toBe(200)
+    expect(updateClashApi).toHaveBeenCalledWith({ port: 9099 })
   })
 })

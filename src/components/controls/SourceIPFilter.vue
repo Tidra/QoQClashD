@@ -13,7 +13,6 @@ import { reverseDNSRevision } from '@/helper/reverseDns'
 import { getIPLabelFromMap } from '@/helper/sourceip'
 import { connections, sourceIPFilter } from '@/store/connections'
 import { resolveClientHostname } from '@/store/settings'
-import { activeUuid } from '@/store/setup'
 import * as ipaddr from 'ipaddr.js'
 import { isEqual, uniq } from 'lodash'
 import { computed, ref, watch } from 'vue'
@@ -48,7 +47,7 @@ const sourceIPsKey = computed(() => sourceIPs.value.join('\u0000'))
 
 // do not use computed here for firefox
 watch(
-  [sourceIPsKey, reverseDNSRevision, resolveClientHostname, activeUuid],
+  [sourceIPsKey, reverseDNSRevision, resolveClientHostname],
   () => {
     const options: { label: string; value: string[] }[] = []
 

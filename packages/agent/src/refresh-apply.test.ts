@@ -1,6 +1,6 @@
-import type { KernelState, MihomoSupervisor, ProfileStore } from './types'
 import { describe, expect, it, vi } from 'vitest'
 import { applyActiveRefresh } from './refresh-apply'
+import type { KernelState, MihomoSupervisor, ProfileStore } from './types'
 
 function fakeProfiles(activeId: string | undefined) {
   return {
@@ -13,7 +13,6 @@ function fakeSupervisor() {
   const state: KernelState = {
     status: 'running',
     externalController: '127.0.0.1:9090',
-    secret: 's',
   }
   return {
     restart: vi.fn(async () => ({ ...state, pid: 9 })),

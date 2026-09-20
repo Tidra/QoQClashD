@@ -3,8 +3,10 @@
 // 这是「节点/代理组/规则编辑 → 内核生效」链路上原本缺失的一环。
 import { useControlApi } from '@/composables/useControlApi'
 import { composeConfigYaml } from '@/helper/composeConfig'
+import { showNotification } from '@/helper/notification'
+import { notifyRequestError } from '@/helper/requestError'
 import { useStorage } from '@/helper/storage'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const PANEL_PROFILE_NAME = '面板配置'
 
@@ -52,4 +54,30 @@ export const applyComposedConfig = async (): Promise<void> => {
   panelProfileId.value = id
   await api.activateProfile(id)
   appliedConfigHash.value = hashYaml(content)
+}
+
+// 设置页的「重载配置」与侧栏的快捷下发共用这一份状态：两处都能点，就得只有一处在忙。
+export const applyingConfig = ref(false)
+
+// 下发进行中又收到请求（批量刷新订阅时几个订阅各自落地）时记一笔，本轮结束后补发一次：
+// 既保证最终进内核的是最新草稿，也不会连着重启多次。
+let applyAgainRequested = false
+
+export const applyDraftConfig = async () => {
+  if (applyingConfig.value) {
+    applyAgainRequested = true
+    return
+  }
+  applyingConfig.value = true
+  try {
+    do {
+      applyAgainRequested = false
+      await applyComposedConfig()
+    } while (applyAgainRequested)
+    showNotification({ content: 'applyConfigSuccess', type: 'alert-success' })
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    applyingConfig.value = false
+  }
 }

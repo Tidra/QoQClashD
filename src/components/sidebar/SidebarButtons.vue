@@ -1,15 +1,34 @@
 <template>
   <div :class="wrapperClass">
-    <!--
-      展开时 CommonCtrl 里已经有一个整行的切换器了,这里不再重复;
-      折叠成一列图标时它是唯一能看到后端状态、能切换后端的入口。
-    -->
-    <BackendSwitch
-      v-if="vertical"
-      compact
-    />
+    <!-- 侧栏常驻：草稿有改动但没下发给内核时红点闪烁，点一下直接组合 YAML 并重启内核，
+         不用进设置页找「重载配置」。 -->
     <button
-      v-if="panelPassword"
+      v-if="authStatus?.authenticated"
+      class="btn btn-circle btn-sm relative"
+      :disabled="applyingConfig"
+      :title="t('applyConfigSummary')"
+      :aria-label="t('applyConfig')"
+      @click="applyDraftConfig"
+    >
+      <span
+        v-if="applyingConfig"
+        class="loading loading-spinner h-4 w-4"
+      ></span>
+      <ArrowPathIcon
+        v-else
+        class="h-4 w-4"
+      />
+      <span
+        v-if="pendingConfigChanges && !applyingConfig"
+        class="bg-error absolute -top-1 -right-1 flex h-2 w-2 animate-ping rounded-full"
+      ></span>
+      <span
+        v-if="pendingConfigChanges && !applyingConfig"
+        class="bg-error absolute -top-1 -right-1 h-2 w-2 rounded-full"
+      ></span>
+    </button>
+    <button
+      v-if="authStatus?.authenticated"
       class="btn btn-circle btn-sm"
       :title="t('logout')"
       @click="handleLogout"
@@ -29,13 +48,17 @@
 </template>
 
 <script setup lang="ts">
-import BackendSwitch from '@/components/settings/backend/BackendSwitch.vue'
-import { useI18n } from 'vue-i18n'
-import router from '@/router'
+import { applyDraftConfig, applyingConfig, pendingConfigChanges } from '@/helper/applyConfig'
+import { authStatus, logoutPanel } from '@/helper/panelSession'
 import { isSidebarCollapsed } from '@/store/settings'
-import { ArrowLeftCircleIcon, ArrowRightCircleIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/vue/24/outline'
+import {
+  ArrowLeftCircleIcon,
+  ArrowPathIcon,
+  ArrowRightCircleIcon,
+  ArrowRightStartOnRectangleIcon,
+} from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
-import { logoutPanel, panelPassword } from '@/helper/panelAuth'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   vertical?: boolean
@@ -49,8 +72,5 @@ const wrapperClass = computed(() => {
     : 'flex flex-row-reverse items-center justify-center gap-2'
 })
 
-const handleLogout = () => {
-  logoutPanel()
-  router.push({ name: 'setup' })
-}
+const handleLogout = () => void logoutPanel()
 </script>

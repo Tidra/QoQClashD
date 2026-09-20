@@ -1,8 +1,9 @@
-import { API_SECRET } from '@/config/env'
 import type { StorageLike, UseStorageOptions } from '@vueuse/core'
 import { useStorage as useVueUseStorage } from '@vueuse/core'
 import type { MaybeRefOrGetter, Ref } from 'vue'
 import { ref, toValue, watch } from 'vue'
+import { whenSessionReady } from './sessionGate'
+import { markUnauthorized } from './unauthorized'
 
 const isSessionStorage = (storage?: StorageLike) => storage === sessionStorage
 const cloneDefault = <T>(value: T): T => {
@@ -10,30 +11,58 @@ const cloneDefault = <T>(value: T): T => {
   return structuredClone(value)
 }
 
-const headers = () => ({
-  'Content-Type': 'application/json',
-  ...(API_SECRET ? { Authorization: `Bearer ${API_SECRET}` } : {}),
-})
+// 会话 cookie 由浏览器自动带上（同源），这里只负责把 401 报出去。
+const jsonHeaders = { 'Content-Type': 'application/json' }
+
+const reportUnauthorized = (response: Response) => {
+  if (response.status === 401) markUnauthorized()
+}
 
 async function readServerValue<T>(key: string): Promise<T | undefined> {
+  await whenSessionReady()
   // 必须 no-store：后端 KV 响应不带任何缓存头，浏览器会启发式缓存 GET 结果。
   // 刷新后读到旧快照、种子修补再把旧快照回写，会静默清掉服务器上真实数据。
   const response = await fetch(`/api/control/storage/kv?key=${encodeURIComponent(key)}`, {
-    headers: headers(),
     cache: 'no-store',
   })
-  if (!response.ok) throw new Error(`storage read failed: HTTP ${response.status}`)
+  if (!response.ok) {
+    reportUnauthorized(response)
+    throw new Error(`storage read failed: HTTP ${response.status}`)
+  }
   const body = (await response.json()) as { value: string | null }
   return body.value === null ? undefined : (JSON.parse(body.value) as T)
 }
 
 async function writeServerValue(key: string, value: unknown) {
+  await whenSessionReady()
   const response = await fetch('/api/control/storage/kv', {
     method: 'PUT',
-    headers: headers(),
+    headers: jsonHeaders,
     body: JSON.stringify({ key, value: JSON.stringify(value) }),
   })
   if (!response.ok) throw new Error(`storage write failed: HTTP ${response.status}`)
+}
+
+/** 一次取整段 KV(值为存储原样的 JSON 字符串),避免按键逐个发请求。 */
+export const readKvEntries = async (prefix: string): Promise<Record<string, string>> => {
+  await whenSessionReady()
+  const response = await fetch(`/api/control/storage/kv?prefix=${encodeURIComponent(prefix)}`, {
+    cache: 'no-store',
+  })
+  if (!response.ok) throw new Error(`storage list failed: HTTP ${response.status}`)
+  const body = (await response.json()) as { entries?: Record<string, string> }
+  return body.entries ?? {}
+}
+
+/** 一次写一整段 KV:只落点名的键,不隐式清空其它键。 */
+export const writeKvEntries = async (entries: Record<string, string>) => {
+  await whenSessionReady()
+  const response = await fetch('/api/control/storage/kv', {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify({ entries }),
+  })
+  if (!response.ok) throw new Error(`storage bulk write failed: HTTP ${response.status}`)
 }
 
 // 水合门控：useStorage 的初始值是默认值，服务器数据要等异步 GET 返回。
@@ -78,11 +107,14 @@ export function useStorage<T>(
   // 水合期间发生的本地修改（种子注入、HMR 后重放等）不能被迟到的服务器旧值覆盖，
   // 且水合结束后要回写服务器，否则修改会两头丢失。
   let localDirty = false
+  // 服务器到底读成功没有：失败时服务器状态未知，任何回写都可能覆盖真实数据。
+  let readSucceeded = false
   // 最近一次与服务器一致序列化值：跳过内容相同的回显写入（水合回写、克隆赋值等）
   let lastSynced: string | undefined
   beginHydration()
   void readServerValue<T>(currentKey)
     .then((value) => {
+      readSucceeded = true
       if (value === undefined) return
       lastSynced = JSON.stringify(value)
       if (!localDirty) state.value = value
@@ -93,10 +125,14 @@ export function useStorage<T>(
     .finally(() => {
       loading.value = false
       if (localDirty) {
-        lastSynced = JSON.stringify(state.value)
-        void writeServerValue(currentKey, state.value).catch((error) => {
-          console.error(`[storage] failed to persist ${currentKey}`, error)
-        })
+        if (!readSucceeded) {
+          console.error(`[storage] ${currentKey} 未取到服务器值，本地修改不回写，避免覆盖存量数据`)
+        } else {
+          lastSynced = JSON.stringify(state.value)
+          void writeServerValue(currentKey, state.value).catch((error) => {
+            console.error(`[storage] failed to persist ${currentKey}`, error)
+          })
+        }
       }
       endHydration()
     })
@@ -104,7 +140,7 @@ export function useStorage<T>(
   watch(
     state,
     (value) => {
-      if (loading.value) {
+      if (loading.value || !readSucceeded) {
         localDirty = true
         return
       }

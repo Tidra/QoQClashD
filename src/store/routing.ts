@@ -1,4 +1,5 @@
 import { useStorage } from '@/helper/storage'
+import { ALL_NODES_GROUP_NAME } from '@/store/proxyGroups'
 
 export type RoutingRuleDraft = {
   id: string
@@ -306,6 +307,53 @@ export const ruleProviderReferenceCount = (name: string) =>
 
 // ── 默认种子（追加式、幂等） ──────────────────────────────────────
 
+/**
+ * 冷启动默认规则：局域网直连 → 国内直连 → 其余全部走「全部节点」。
+ *
+ * 局域网用显式 IP-CIDR 而不是 `RULE-SET,LAN`：后者要先有一个同名 rule-provider，
+ * 用户删掉那个集合就会让这条规则指向空引用、整个配置在内核侧失效。
+ */
+const defaultRoutingRules = (): RoutingRuleDraft[] => {
+  const lan = (id: string, payload: string): RoutingRuleDraft => ({
+    id,
+    type: 'IP-CIDR',
+    payload,
+    target: 'DIRECT',
+    noResolve: true,
+    enabled: true,
+  })
+  return [
+    lan('rule-lan-10', '10.0.0.0/8'),
+    lan('rule-lan-100', '100.64.0.0/10'),
+    lan('rule-lan-127', '127.0.0.0/8'),
+    lan('rule-lan-172', '172.16.0.0/12'),
+    lan('rule-lan-192', '192.168.0.0/16'),
+    { ...lan('rule-lan-v6', 'fc00::/7'), type: 'IP-CIDR6' },
+    {
+      id: 'rule-geosite-cn',
+      type: 'GEOSITE',
+      payload: 'cn',
+      target: 'DIRECT',
+      enabled: true,
+    },
+    {
+      id: 'rule-geoip-cn',
+      type: 'GEOIP',
+      payload: 'CN',
+      target: 'DIRECT',
+      enabled: true,
+    },
+    {
+      id: DEFAULT_RULE_ID,
+      type: 'MATCH',
+      payload: '',
+      target: ALL_NODES_GROUP_NAME,
+      enabled: true,
+      builtin: true,
+    },
+  ]
+}
+
 export const seedRoutingDefaults = () => {
   // v8 曾把主入口建模为内置 listener；顶层属性 store 出现后把它迁移掉
   type LegacyInbound = InboundDraft & { builtin?: boolean }
@@ -320,6 +368,12 @@ export const seedRoutingDefaults = () => {
     routingMainEntry.value = { ...routingMainEntry.value, 'allow-lan': false }
   }
 
+  if (routingRules.value.length === 0) {
+    // 冷启动：整张规则表为空才注入默认三段。用户删掉它们后不会在下次启动又冒出来。
+    routingRules.value = defaultRoutingRules()
+    return
+  }
+
   if (!routingRules.value.some((item) => item.id === DEFAULT_RULE_ID)) {
     routingRules.value = [
       ...routingRules.value,
@@ -327,7 +381,7 @@ export const seedRoutingDefaults = () => {
         id: DEFAULT_RULE_ID,
         type: 'MATCH',
         payload: '',
-        target: '全部节点',
+        target: ALL_NODES_GROUP_NAME,
         enabled: true,
         builtin: true,
       },

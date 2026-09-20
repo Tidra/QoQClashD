@@ -1,6 +1,5 @@
 import { renderRoutes } from '@/helper'
 import { isSidebarCollapsed, keyboardShortcuts, manageHiddenGroup } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -220,10 +219,6 @@ export const useKeyboard = () => {
     if (action === KEYBOARD_SHORTCUT_ACTION.TOGGLE_MANAGE_HIDDEN_GROUP) {
       event.preventDefault()
       manageHiddenGroup.value = !manageHiddenGroup.value
-      return
-    }
-
-    if (!activeBackend.value) {
       return
     }
 

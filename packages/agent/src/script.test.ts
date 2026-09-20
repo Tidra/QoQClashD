@@ -77,9 +77,8 @@ describe('createScriptRunner — default worker runner', () => {
   })
 
   it('runs the dashboard-provided default script template unchanged (#2155)', async () => {
-    // Mirrors DEFAULT_SCRIPT_CONTENT in packages/ui/constants/index.ts. New
-    // script profiles ship with this so users don't start from an empty file
-    // and discover the (config) => config contract by trial and error.
+    // The template new script profiles ship with, so users don't start from an
+    // empty file and discover the (config) => config contract by trial and error.
     const runner = createScriptRunner()
     const code = `// Script profile: transform the parsed mihomo config and return the result.
 // The export MUST be a function (config) => config — a "main()" function

@@ -4,7 +4,6 @@
 import { can, core, Core } from '@/assembly/backend'
 import { LOG_LEVEL } from '@/constant'
 import { useStorage } from '@/helper/storage'
-import { activeBackend } from '@/store/setup'
 import type { LogWithSeq } from '@/types'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { createLogsAccumulator } from './accumulator'
@@ -25,10 +24,10 @@ export const supportedLogLevels = computed(() => {
   return levels
 })
 
-// logLevel 是跨后端持久化的,切到不认该级别的内核后必须退档,否则流永远起不来。
-// 后端为空或内核未探测出结论(Core.Unknown)时不动它 —— 那时候的能力表还不是最终答案。
+// logLevel 是跨会话持久化的,换到不认该级别的内核后必须退档,否则流永远起不来。
+// 内核还没探测出结论(Core.Unknown)时不动它 —— 那时候的能力表还不是最终答案。
 watch(supportedLogLevels, (levels) => {
-  if (!activeBackend.value || core.value === Core.Unknown) return
+  if (core.value === Core.Unknown) return
   if (levels.includes(logLevel.value as LOG_LEVEL)) return
 
   logLevel.value = LOG_LEVEL.Info
@@ -50,8 +49,8 @@ export const initLogs = () => {
 }
 
 // 结束流时一并丢掉日志。日志形态在累加器里已经归一化,不会像连接那样把渲染打崩
-// (见 store/connections),但把上一个后端的日志留在屏幕上同样是错的 —— 新后端连不上时,
-// 它们会一直冒充新后端的日志。
+// (见 store/connections),但把上一个内核的日志留在屏幕上同样是错的 —— 新内核
+// 连不上时,它们会一直冒充新内核的日志。
 export const stopLogs = () => {
   cancel?.()
   cancel = undefined

@@ -32,16 +32,6 @@
             :aria-label="$t('settingsCategory')"
             :options="categorySelectOptions"
           />
-          <template v-if="activeBackend">
-            <span class="text-base-content/30 shrink-0">|</span>
-            <span class="text-base-content/55 flex min-w-0 shrink items-center gap-1.5 text-xs">
-              <BackendStatusDot
-                :status="connectionStatus"
-                :show-latency="false"
-              />
-              <span class="min-w-0 truncate">{{ connectedBackendLabel }}</span>
-            </span>
-          </template>
         </div>
 
         <SettingsSearch
@@ -147,16 +137,6 @@
       >
         <div class="mb-4 px-2">
           <h1 class="text-xl font-semibold tracking-tight">{{ $t('settings') }}</h1>
-          <div
-            v-if="activeBackend"
-            class="text-base-content/55 mt-1 flex min-w-0 items-center gap-1.5 text-sm"
-          >
-            <BackendStatusDot
-              :status="connectionStatus"
-              :show-latency="false"
-            />
-            <span class="min-w-0 truncate">{{ connectedBackendLabel }}</span>
-          </div>
         </div>
 
         <SettingsSearch
@@ -262,8 +242,6 @@
 </template>
 
 <script setup lang="ts">
-import { backendProbe } from '@/assembly/version'
-import BackendStatusDot from '@/components/common/BackendStatusDot.vue'
 import CtrlsBar from '@/components/common/CtrlsBar.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
 import BackendSettings from '@/components/settings/backend/BackendSettings.vue'
@@ -273,14 +251,12 @@ import OverviewSettings from '@/components/settings/overview/OverviewSettings.vu
 import ProxiesSettings from '@/components/settings/proxies/ProxiesSettings.vue'
 import SettingsCustomizationDialog from '@/components/settings/SettingsCustomizationDialog.vue'
 import SettingsSearch from '@/components/settings/SettingsSearch.vue'
-import type { ReachabilityStatus } from '@/composables/backendReachability'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { settingsPaneTransition } from '@/composables/pageTransition'
 import { useSettingsSection, visibleSectionKeys } from '@/composables/settingsSection'
 import { SETTINGS_CATEGORIES, SETTINGS_MENU_LABELS } from '@/config/settingsItems'
 import { SETTINGS_MENU_KEY } from '@/constant'
-import { getLabelFromBackend, isMiddleScreen, isPWA } from '@/helper/utils'
-import { activeBackend, activeUuid } from '@/store/setup'
+import { isMiddleScreen, isPWA } from '@/helper/utils'
 import {
   AdjustmentsHorizontalIcon,
   ArrowPathIcon,
@@ -313,17 +289,6 @@ const router = useRouter()
 const scrollContainerRef = ref<HTMLDivElement>()
 const { width } = useElementSize(scrollContainerRef)
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 8 })
-
-const connectedBackendLabel = computed(() =>
-  activeBackend.value ? getLabelFromBackend(activeBackend.value) : '',
-)
-const connectionStatus = computed<ReachabilityStatus>(() => {
-  const probe = backendProbe.value
-  if (probe?.uuid !== activeUuid.value) return 'idle'
-  if (probe.status === 'connected') return 'online'
-  if (probe.status === 'failed') return 'offline'
-  return 'checking'
-})
 
 const customizationOpen = ref(false)
 const mobileSearchOpen = ref(false)

@@ -1,6 +1,5 @@
 import { queryDNSAPI } from '@/assembly/config'
 import { resolveClientHostname } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import * as ipaddr from 'ipaddr.js'
 import { reactive, ref } from 'vue'
 
@@ -17,7 +16,6 @@ const NEGATIVE_TTL = 10 * 60 * 1000
 const CACHE_KEY = 'cache/reverse-dns-hostnames'
 const CACHE_CAP = 200
 
-// Private IPs can identify different devices on different backends.
 const memoryCache = new Map<string, HostnameEntry>()
 const inflight = new Map<string, Promise<string | null>>()
 const hostnameState = reactive<Record<string, string>>({})
@@ -184,41 +182,37 @@ async function fetchHostname(ip: string): Promise<string | null> {
 function lookup(ip: string): string | undefined {
   if (!resolveClientHostname.value || !isResolvableIP(ip)) return undefined
 
-  const backendUuid = activeBackend.value?.uuid
-  if (!backendUuid) return undefined
-
-  const key = `${backendUuid}\u0000${ip}`
-  const cached = memoryCache.get(key)
+  const cached = memoryCache.get(ip)
   const now = Date.now()
 
   if (cached) {
     if (!isExpired(cached, now)) {
-      if (cached.name) promote(key, cached.name)
-      return hostnameState[key]
+      if (cached.name) promote(ip, cached.name)
+      return hostnameState[ip]
     }
 
-    memoryCache.delete(key)
-    clearHostname(key)
+    memoryCache.delete(ip)
+    clearHostname(ip)
   }
 
-  if (!inflight.has(key)) {
+  if (!inflight.has(ip)) {
     const promise = fetchHostname(ip)
-    inflight.set(key, promise)
+    inflight.set(ip, promise)
 
     promise
       .then((name) => {
         const entry: HostnameEntry = { name, ts: Date.now() }
-        memoryCache.set(key, entry)
+        memoryCache.set(ip, entry)
 
         if (name) {
-          promote(key, name)
-          persistPositive(key, entry)
+          promote(ip, name)
+          persistPositive(ip, entry)
         }
       })
-      .finally(() => inflight.delete(key))
+      .finally(() => inflight.delete(ip))
   }
 
-  return hostnameState[key]
+  return hostnameState[ip]
 }
 
 export const getReverseDNSHostname = (ip: string | undefined): string | undefined => {

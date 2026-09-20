@@ -1,6 +1,5 @@
 import { getReverseDNSHostname } from '@/helper/reverseDns'
 import { sourceIPLabelList } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import * as ipaddr from 'ipaddr.js'
 import { watch } from 'vue'
 
@@ -17,11 +16,7 @@ const preprocessSourceIPList = () => {
   sourceIPRegexList.length = 0
   sourceIPCIDRList.length = 0
 
-  for (const { key, label, scope } of sourceIPLabelList.value) {
-    if (scope && !scope.includes(activeBackend.value?.uuid as string)) {
-      continue
-    }
-
+  for (const { key, label } of sourceIPLabelList.value) {
     if (key.startsWith('/')) {
       sourceIPRegexList.push({ regex: new RegExp(key.slice(1), 'i'), label })
       continue
@@ -55,7 +50,7 @@ const cacheResult = (ip: string, label: string | null) => {
   return label
 }
 
-watch(() => [sourceIPLabelList.value, activeBackend.value], preprocessSourceIPList, {
+watch(sourceIPLabelList, preprocessSourceIPList, {
   immediate: true,
   deep: true,
 })

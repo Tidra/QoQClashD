@@ -1,1 +1,30 @@
-./node_modules
+# 依赖与构建产物一律在镜像内重新生成
+node_modules
+**/node_modules
+/dist
+/dist-server
+
+# 运行时数据：SQLite 里存着面板密码（= 内核 Clash API secret）和订阅地址，
+# 内核二进制也不需要进镜像（面板在容器内自行下载）。绝不能出现在构建上下文里。
+/data
+/kernel
+/packages/agent/data
+/packages/agent/kernel
+
+# 本地环境变量：Vite 构建时会自动读取根目录 .env*，不排除就会把本机密钥打进前端产物。
+# 镜像的运行时配置一律走 docker run / compose 的 env。
+.env
+.env.*
+!.env.example
+
+# 本地过程文件
+*.log
+/design
+
+# Git 与编辑器状态
+/.git
+/.github
+/.husky
+/.vscode
+/.idea
+.DS_Store

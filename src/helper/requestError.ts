@@ -2,7 +2,7 @@
 //
 // api 层不再全局拦截报错(见 api/http.ts):是否打扰用户由发起请求的业务层决定 ——
 // 只有用户手动触发的动作(点按钮、提交表单)才 try-catch 后调用这里弹提示;
-// 后台自动拉取(轮询、切后端后的初始化、反查 DNS 等)失败一律静默。
+// 后台自动拉取(轮询、重开会话后的初始化、反查 DNS 等)失败一律静默。
 import axios from 'axios'
 import { showNotification } from './notification'
 

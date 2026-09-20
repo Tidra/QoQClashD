@@ -216,6 +216,17 @@
             :placeholder="String(SUB_DEFAULTS.updateInterval)"
           />
         </div>
+        <div class="setting-item">
+          <div class="setting-item-label">
+            {{ $t('subscriptionApplyToKernel') }}
+            <div class="setting-item-summary">{{ $t('subscriptionApplyToKernelSummary') }}</div>
+          </div>
+          <input
+            v-model="form.applyToKernel"
+            type="checkbox"
+            class="toggle"
+          />
+        </div>
       </div>
       <!-- 操作行 -->
       <div class="border-base-300/60 flex items-center justify-end gap-2 border-t p-4 pt-3">
@@ -274,8 +285,16 @@ const form = ref<{
   url: string
   enabled: boolean
   autoUpdate: boolean
+  applyToKernel: boolean
   updateInterval?: number
-}>({ name: '', url: '', enabled: true, autoUpdate: false, updateInterval: undefined })
+}>({
+  name: '',
+  url: '',
+  enabled: true,
+  autoUpdate: false,
+  applyToKernel: false,
+  updateInterval: undefined,
+})
 
 const subscriptions = computed(() => subscriptionList.value)
 const subscriptionSearch = ref('')
@@ -296,6 +315,7 @@ const openCreateDialog = () => {
     url: '',
     enabled: true,
     autoUpdate: false,
+    applyToKernel: false,
     updateInterval: undefined,
   }
   dialogOpen.value = true
@@ -308,6 +328,7 @@ const openEditDialog = (item: SubscriptionItem) => {
     url: item.url,
     enabled: item.enabled,
     autoUpdate: item.autoUpdate,
+    applyToKernel: !!item.applyToKernel,
     // 与默认值相同则留空，由灰字占位代替
     updateInterval:
       item.updateInterval && item.updateInterval !== SUB_DEFAULTS.updateInterval
@@ -340,6 +361,7 @@ const saveSubscription = () => {
     url,
     enabled: form.value.enabled,
     autoUpdate: form.value.autoUpdate,
+    applyToKernel: form.value.applyToKernel,
     updateInterval: form.value.autoUpdate
       ? Math.max(1, Math.floor(Number(form.value.updateInterval) || SUB_DEFAULTS.updateInterval))
       : undefined,

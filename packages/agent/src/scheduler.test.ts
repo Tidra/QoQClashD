@@ -1,17 +1,17 @@
-import type { ProfileMeta, ProfileStore } from './types'
 import { describe, expect, it, vi } from 'vitest'
 import { createProfileScheduler } from './scheduler'
+import type { ProfileMeta, ProfileStore } from './types'
 
 // Minimal fake timer: capture the registered callback so the test can drive
 // ticks manually (mirrors supervisor.ts's injectable now()/deps style).
 function fakeTimers() {
   let cb: (() => void) | undefined
   let cleared = false
-  const setTimer = vi.fn((fn: () => void, _ms: number) => {
+  const setTimer = vi.fn((fn: () => void) => {
     cb = fn
     return 1 as unknown as ReturnType<typeof setTimeout>
   })
-  const clearTimer = vi.fn((_handle: ReturnType<typeof setTimeout>) => {
+  const clearTimer = vi.fn(() => {
     cleared = true
   })
   return {
@@ -25,10 +25,7 @@ function fakeTimers() {
 }
 
 // In-memory ProfileStore double — only list/refresh matter to the scheduler.
-function fakeProfiles(
-  list: ProfileMeta[],
-  refreshImpl?: (id: string) => Promise<ProfileMeta>,
-) {
+function fakeProfiles(list: ProfileMeta[], refreshImpl?: (id: string) => Promise<ProfileMeta>) {
   const refresh = vi.fn(
     refreshImpl ??
       (async (id: string) => {

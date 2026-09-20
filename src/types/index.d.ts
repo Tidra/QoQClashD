@@ -1,22 +1,3 @@
-// 只剩 Clash REST/WS 一种后端。字段保留是为了让旧记录的迁移与 URL 参数解析
-// 有个明确的落点,不必在每处都写字面量。
-export type BackendType = 'clash'
-
-export type Backend = {
-  type: BackendType
-  protocol: string
-  host: string
-  port: string
-  secondaryPath: string
-  password: string // Clash secret
-  uuid: string
-  label?: string
-  disableUpgradeCore?: boolean
-  disableTunMode?: boolean
-  /** 由面板 agent 托管的内置内核,连接失败时引导去启动内核而非改后端配置 */
-  managedKernel?: boolean
-}
-
 export type Config = {
   port: number
   'socks-port': number
@@ -221,7 +202,6 @@ export type SourceIPLabel = {
   key: string
   label: string
   id: string
-  scope?: string[]
 }
 
 // smart core

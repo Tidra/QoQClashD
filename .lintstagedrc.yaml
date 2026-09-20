@@ -1,5 +1,4 @@
 'package.json': 'sort-package-json'
-# packages/ui 是内联的上游源码，非 pnpm workspace 包，其自带 eslint.config.mjs 依赖的
-# @antfu/eslint-config 未安装；固定用根配置，避免 ESLint 逐文件向上探测到该坏配置。
+# 固定用根配置：ESLint 逐文件向上探测配置，仓库里任何子目录自带的旧配置都不该生效。
 '*.{js,jsx,ts,tsx,vue}': 'eslint --fix --config eslint.config.js'
 '*.{js,jsx,mjs,ts,tsx,vue,html,css,json,yml,yaml}': 'prettier --write'

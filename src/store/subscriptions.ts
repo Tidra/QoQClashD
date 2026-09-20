@@ -1,4 +1,5 @@
 import { useControlApi } from '@/composables/useControlApi'
+import { applyDraftConfig, pendingConfigChanges } from '@/helper/applyConfig'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
 import type { CustomNode } from '@/store/nodePool'
@@ -15,6 +16,8 @@ export interface SubscriptionItem {
   autoUpdate: boolean
   /** 自动更新间隔（分钟），autoUpdate 开启时生效 */
   updateInterval?: number
+  /** 拉到新节点后是否顺带下发内核（组合 YAML → 重启内核） */
+  applyToKernel?: boolean
   /** 拉取内容导入到的节点池 id */
   poolId?: string
   updatedAt?: string
@@ -22,7 +25,7 @@ export interface SubscriptionItem {
 
 export type SubscriptionStatus = 'idle' | 'pending' | 'ok' | 'error'
 
-// 订阅元数据持久化在 localStorage（data 目录的浏览器侧落点）。
+// 订阅元数据持久化在后端 KV（data 目录的 sqlite）。
 // 节点内容本身拉取后由 nodePool 统一合并，这里只存"哪个订阅 + 什么状态"。
 export const subscriptionList = useStorage<SubscriptionItem[]>('config/subscriptions', [])
 // 每个订阅的拉取状态，不持久化（会话级），刷新后重置为 idle。
@@ -256,9 +259,13 @@ export const applySubscriptionContent = (id: string, content: string): number =>
 export const refreshSubscriptionWithImport = async (
   id: string,
 ): Promise<{ ok: boolean; imported: number; error?: string }> => {
+  const item = subscriptionList.value.find((s) => s.id === id)
   const result = await refreshSubscription(id)
   if (!result.ok) return { ok: false, imported: 0, error: result.error }
   const imported = result.content ? applySubscriptionContent(id, result.content) : 0
+  // 勾选了「更新后下发内核」：订阅源没变时草稿 hash 不变，就不去重启内核。
+  // 批量刷新里多个订阅同时命中会各自请求一次，applyDraftConfig 内部合并成补发一轮。
+  if (imported && item?.applyToKernel && pendingConfigChanges.value) void applyDraftConfig()
   return { ok: true, imported }
 }
 

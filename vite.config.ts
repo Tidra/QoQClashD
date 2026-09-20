@@ -1,25 +1,8 @@
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
-import { execSync } from 'child_process'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { version } from './package.json'
-
-const getGitCommitId = (): string => {
-  try {
-    const commitMessage = execSync('git log -1 --pretty=%B', { encoding: 'utf8' }).trim()
-
-    if (commitMessage.includes('chore(main): release')) {
-      return ''
-    }
-
-    return execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
-  } catch (error) {
-    console.warn('无法获取git commit ID:', error)
-    return ''
-  }
-}
 
 // Selects which fonts get bundled. One of:
 //   all (default) | cdn | firasans | misans | pingfang | sarasa | none
@@ -29,16 +12,7 @@ const font = process.env.FONT || 'all'
 // https://vite.dev/config/
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(version),
-    __COMMIT_ID__: JSON.stringify(getGitCommitId()),
     __FONT__: JSON.stringify(font),
-    __ENV__: JSON.stringify({
-      CORE_STORAGE_DIR: process.env.CORE_STORAGE_DIR ?? './core',
-      DATA_DIR: process.env.DATA_DIR ?? './data',
-      PANEL_PORT: process.env.PANEL_PORT ?? '80',
-      API_HOST: process.env.API_HOST ?? 'http://127.0.0.1:9090',
-      API_SECRET: process.env.API_SECRET ?? '',
-    }),
   },
   base: './',
   server: {
@@ -70,9 +44,9 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       manifest: {
-        name: 'zashboard',
-        short_name: 'zashboard',
-        description: 'a dashboard using clash api',
+        name: 'QoQClashD',
+        short_name: 'QoQClashD',
+        description: 'Mihomo 代理控制面板',
         theme_color: '#000000',
         icons: [
           {

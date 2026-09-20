@@ -46,6 +46,10 @@ function sleep(ms: number, now: () => number): Promise<void> {
 // start another validator against the same homeDir.
 const VALIDATE_KILL_GRACE_MS = 5_000
 
+// Same ceiling for the stop path after SIGKILL: a kill that targets a pid the OS
+// already reaped (win32 taskkill on a vanished process) never emits 'exit'.
+const STOP_KILL_GRACE_MS = 5_000
+
 export function createSupervisor(
   opts: CreateSupervisorOptions,
   deps: SupervisorDeps = {},
@@ -76,8 +80,9 @@ export function createSupervisor(
   const state: KernelState = {
     status: 'stopped',
     externalController: opts.externalController ?? '127.0.0.1:9090',
-    secret: opts.secret ?? randomBytes(16).toString('hex'),
   }
+  // 共用密码刻意留在闭包里，不进 state —— 见 MihomoSupervisor.getControllerSecret。
+  let controllerSecret = opts.secret ?? randomBytes(16).toString('hex')
 
   const logCbs = new Set<(l: KernelLogLine) => void>()
   const stateCbs = new Set<(s: KernelState) => void>()
@@ -141,7 +146,7 @@ export function createSupervisor(
       if (state.status === 'errored') return false
       try {
         const res = await doFetch(versionUrl(), {
-          headers: state.secret ? { Authorization: `Bearer ${state.secret}` } : undefined,
+          headers: controllerSecret ? { Authorization: `Bearer ${controllerSecret}` } : undefined,
         })
         if (res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
@@ -173,10 +178,25 @@ export function createSupervisor(
     }
   }
 
+  // Resolves true when the child reports 'exit', false once `graceMs` elapses
+  // without it. Every await on a kill goes through here so a process the OS
+  // already reaped can't strand the mutex — start/restart/dispose all queue
+  // behind it, so one unbounded wait would freeze the whole lifecycle.
+  function waitExit(proc: ChildProcess, graceMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimer(() => resolve(false), graceMs)
+      proc.once('exit', () => {
+        clearTimer(timer)
+        resolve(true)
+      })
+    })
+  }
+
   // Before spawn, force mihomo to bind the Clash API where the supervisor polls.
   // We rewrite the active YAML in place: strip any top-level external-controller/
-  // secret/mixed-port lines the profile carried, then prepend our managed values
-  // so state.externalController/secret (and the optional mixedPort) are authoritative.
+  // secret (and, when we manage the port, mixed-port) lines the profile carried,
+  // then prepend our managed values so state.externalController/controllerSecret
+  // (and the optional mixedPort) are authoritative.
   // A managed mixed port must also be the sole listener on that number: mihomo
   // otherwise keeps the earlier port/socks-port listener and silently reports
   // mixed-port=0 at runtime even though active.yaml still says 7890 (#2136).
@@ -185,7 +205,12 @@ export function createSupervisor(
     if (existsSync(activeConfigPath)) {
       existing = await readFile(activeConfigPath, 'utf8')
     }
-    const managedKeys = new Set(['external-controller', 'secret', 'mixed-port'])
+    // 面板把主入口的 mixed-port 直接组合进 active.yaml，只有 agent 托管端口时才覆盖它。
+    const managedKeys = new Set([
+      'external-controller',
+      'secret',
+      ...(mixedPort != null ? ['mixed-port'] : []),
+    ])
     const listenerPortKeys = new Set(['port', 'socks-port', 'redir-port', 'tproxy-port'])
     const shouldStripTopLevelKey = (line: string): boolean => {
       const separator = line.indexOf(':')
@@ -208,7 +233,7 @@ export function createSupervisor(
       .join('\n')
     const header = [
       `external-controller: ${state.externalController}`,
-      `secret: ${state.secret}`,
+      `secret: ${controllerSecret}`,
       ...(mixedPort != null ? [`mixed-port: ${mixedPort}`] : []),
       '',
     ].join('\n')
@@ -313,12 +338,13 @@ export function createSupervisor(
     }
     setState({ status: 'stopping' })
     const proc = child
-    const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
+    const termExited = waitExit(proc, stopTimeoutMs)
     killProc('SIGTERM')
-    const timer = sleep(stopTimeoutMs, now).then(() => 'timeout' as const)
-    const winner = await Promise.race([exited.then(() => 'exited' as const), timer])
-    if (winner === 'timeout') killProc('SIGKILL')
-    await exited
+    if (!(await termExited)) {
+      const killedExited = waitExit(proc, STOP_KILL_GRACE_MS)
+      killProc('SIGKILL')
+      await killedExited
+    }
     child = undefined
     setState({ status: 'stopped', pid: undefined })
     return { ...state }
@@ -327,6 +353,9 @@ export function createSupervisor(
   const supervisor: MihomoSupervisor = {
     getState() {
       return { ...state }
+    },
+    getControllerSecret() {
+      return controllerSecret
     },
     start() {
       return run(doStart)
@@ -346,6 +375,12 @@ export function createSupervisor(
     setPaths(patch: { homeDir?: string; activeConfigPath?: string }) {
       if (patch.homeDir !== undefined) homeDir = patch.homeDir
       if (patch.activeConfigPath !== undefined) activeConfigPath = patch.activeConfigPath
+    },
+    setController(patch: { externalController?: string; secret?: string }) {
+      const next: Partial<KernelState> = {}
+      if (patch.externalController !== undefined) next.externalController = patch.externalController
+      if (patch.secret !== undefined) controllerSecret = patch.secret
+      if (Object.keys(next).length > 0) setState(next)
     },
     async validate(configPath) {
       return new Promise((resolve) => {

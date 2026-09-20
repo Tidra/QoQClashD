@@ -1,11 +1,26 @@
-import type { SupervisorOptions } from './types'
 import { Buffer } from 'node:buffer'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createSupervisor } from './supervisor'
+import {
+  createSupervisor as createSupervisorReal,
+  type CreateSupervisorOptions,
+  type SupervisorDeps,
+} from './supervisor'
+import type { SupervisorOptions } from './types'
+
+// The supervisor defaults `platform` to process.platform, so on Windows every kill here
+// would run real tree-kill against a fake pid and FakeProc's 'exit' would never fire.
+// These doubles model POSIX children (killProc -> child.kill), so pin the platform; the
+// win32 branch keeps its own test that injects platform + a treeKill spy explicitly.
+function createSupervisor(
+  opts: SupervisorOptions | CreateSupervisorOptions,
+  deps: SupervisorDeps = {},
+) {
+  return createSupervisorReal(opts, { platform: 'linux', ...deps })
+}
 
 // Minimal ChildProcess double: stdout/stderr emitters + kill spy + emit-exit helper.
 class FakeProc extends EventEmitter {
@@ -44,7 +59,8 @@ describe('createSupervisor — initial state', () => {
     const s = sup.getState()
     expect(s.status).toBe('stopped')
     expect(s.externalController).toBe('127.0.0.1:9090')
-    expect(typeof s.secret).toBe('string')
+    // 密码只走 getControllerSecret，不进 state（state 会被 HTTP/SSE 序列化下发）。
+    expect(typeof sup.getControllerSecret()).toBe('string')
     expect(s.pid).toBeUndefined()
   })
 
@@ -55,7 +71,17 @@ describe('createSupervisor — initial state', () => {
       secret: 'topsecret',
     })
     expect(sup.getState().externalController).toBe('0.0.0.0:9090')
-    expect(sup.getState().secret).toBe('topsecret')
+    expect(sup.getControllerSecret()).toBe('topsecret')
+  })
+
+  it('setController retargets the endpoint and swaps the secret in place', () => {
+    const sup = createSupervisor({ ...baseOpts(), secret: 'old' })
+    sup.setController?.({ externalController: '127.0.0.1:9091', secret: 'new' })
+    expect(sup.getState().externalController).toBe('127.0.0.1:9091')
+    expect(sup.getControllerSecret()).toBe('new')
+    // 空串是合法取值（不设密码），不能被当成「未修改」而忽略。
+    sup.setController?.({ secret: '' })
+    expect(sup.getControllerSecret()).toBe('')
   })
 
   it('spawns mihomo with -d homeDir -f activeConfigPath and goes starting->running on ready', async () => {
@@ -84,9 +110,7 @@ describe('createSupervisor — initial state', () => {
 
     const result = await sup.start()
     expect(spawn).toHaveBeenCalledOnce()
-    const [bin, args] = (
-      spawn.mock.calls as unknown as [string, string[]][]
-    )[0]!
+    const [bin, args] = (spawn.mock.calls as unknown as [string, string[]][])[0]!
     expect(bin).toBe('/fake/mihomo')
     expect(args).toEqual(['-d', opts.homeDir, '-f', opts.activeConfigPath])
     expect(result.status).toBe('running')
@@ -157,9 +181,7 @@ describe('createSupervisor — initial state', () => {
     expect(written).toContain('proxies: []')
     // mixed-port is only written when mixedPort is provided.
     expect(
-      written
-        .split('\n')
-        .filter((line) => line.startsWith('external-controller:')),
+      written.split('\n').filter((line) => line.startsWith('external-controller:')),
     ).toHaveLength(1)
     await sup.dispose()
   })
@@ -254,8 +276,7 @@ describe('createSupervisor — initial state', () => {
         })) as unknown as typeof fetch,
     })
     const logs: string[] = []
-    const onLog = (l: { stream: string; line: string }) =>
-      logs.push(`${l.stream}:${l.line}`)
+    const onLog = (l: { stream: string; line: string }) => logs.push(`${l.stream}:${l.line}`)
     sup.on('log', onLog)
     await sup.start()
     proc.stdout.emit('data', Buffer.from('first\n'))
@@ -346,12 +367,41 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(st.status).toBe('stopped')
   })
 
+  it('stop reports stopped when a killed process never emits exit', async () => {
+    const opts = { ...baseOpts(), stopTimeoutMs: 25 }
+    const proc = new FakeProc()
+    // A pid the OS already reaped: the kill lands but 'exit' is never delivered,
+    // so the stop has to end on its grace timer instead of waiting forever.
+    proc.kill = (signal?: string) => {
+      proc.killSignals.push(signal ?? 'SIGTERM')
+      return true
+    }
+    const timers: Array<{ fn: () => void; ms: number }> = []
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms })
+        return timers.length as unknown as ReturnType<typeof setTimeout>
+      }) as never,
+      clearTimer: vi.fn(),
+    })
+    await sup.start()
+    const stopP = sup.stop()
+
+    await vi.waitFor(() => expect(proc.killSignals).toContain('SIGTERM'))
+    timers[timers.length - 1]?.fn() // SIGTERM window elapses
+    await vi.waitFor(() => expect(proc.killSignals).toContain('SIGKILL'))
+    expect(timers[timers.length - 1]?.ms).toBe(5_000)
+    timers[timers.length - 1]?.fn() // kill grace elapses with no exit
+
+    await expect(stopP).resolves.toMatchObject({ status: 'stopped', pid: undefined })
+  })
+
   it('on win32 stop routes through tree-kill instead of child.kill', async () => {
     const opts = baseOpts()
     const proc = new FakeProc()
-    const treeKill = vi.fn(
-      (_pid: number, _sig: string, cb?: (e?: Error) => void) => cb?.(),
-    )
+    const treeKill = vi.fn((_pid: number, _sig: string, cb?: (e?: Error) => void) => cb?.())
     const sup = createSupervisor(opts, {
       spawn: (() => proc) as never,
       fetch: ready200(),
@@ -421,16 +471,9 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     // Switch the binary; current run keeps the old path, the next start uses the new one.
     sup.setBinaryPath('/new/mihomo')
     await sup.restart()
-    const [secondBin, secondArgs] = (
-      spawn.mock.calls as unknown as [string, string[]][]
-    )[1]!
+    const [secondBin, secondArgs] = (spawn.mock.calls as unknown as [string, string[]][])[1]!
     expect(secondBin).toBe('/new/mihomo')
-    expect(secondArgs).toEqual([
-      '-d',
-      opts.homeDir,
-      '-f',
-      opts.activeConfigPath,
-    ])
+    expect(secondArgs).toEqual(['-d', opts.homeDir, '-f', opts.activeConfigPath])
     await sup.dispose()
   })
 
@@ -476,17 +519,8 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     })
     const p = sup.validate(opts.activeConfigPath)
     const [, args] = (spawn.mock.calls as unknown as [string, string[]][])[0]!
-    expect(args).toEqual([
-      '-t',
-      '-d',
-      opts.homeDir,
-      '-f',
-      opts.activeConfigPath,
-    ])
-    proc.stdout.emit(
-      'data',
-      Buffer.from('configuration file test is successful'),
-    )
+    expect(args).toEqual(['-t', '-d', opts.homeDir, '-f', opts.activeConfigPath])
+    proc.stdout.emit('data', Buffer.from('configuration file test is successful'))
     proc.emitExit(0, null)
     const r = await p
     expect(r.valid).toBe(true)
@@ -542,10 +576,7 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     })
 
     const result = sup.validate(opts.activeConfigPath)
-    proc.stderr.emit(
-      'data',
-      Buffer.from("Can't find GeoIP.dat, start download"),
-    )
+    proc.stderr.emit('data', Buffer.from("Can't find GeoIP.dat, start download"))
     expect(timers[0]?.ms).toBe(25)
     timers[0]?.fn()
 

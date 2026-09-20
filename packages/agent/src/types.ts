@@ -6,7 +6,6 @@ export interface KernelState {
   startedAt?: number // uptimeMs = Date.now() - startedAt
   version?: string // captured from Clash GET /version once ready
   externalController: string // e.g. '127.0.0.1:9090' — UI points here
-  secret: string // Clash API secret (also written into config)
   lastExitCode?: number | null
   lastError?: string
 }
@@ -39,6 +38,10 @@ export interface KernelLogLine {
 
 export interface MihomoSupervisor {
   getState: () => KernelState
+  // Clash API 共用密码。故意不进 KernelState：状态对象会被每个控制接口和 SSE 帧
+  // 序列化下发，留在这里就只能靠「记得脱敏」；同源的 /api/mihomo 代理自己注
+  // Authorization，面板只需要 secretSet 这一个布尔。
+  getControllerSecret: () => string
   start: () => Promise<KernelState>
   stop: () => Promise<KernelState>
   restart: () => Promise<KernelState>
@@ -46,6 +49,11 @@ export interface MihomoSupervisor {
   // Relocate the -d home dir and/or the -f active config; like setBinaryPath,
   // effective on the NEXT start/validate spawn (the running process keeps its paths).
   setPaths: (patch: { homeDir?: string; activeConfigPath?: string }) => void
+  // Point the Clash API at another bind address / secret. Effective on the NEXT
+  // start: injectClashConfig rewrites the managed header of active.yaml at spawn,
+  // so a live kernel keeps whatever it booted with. Optional so desktop/test
+  // doubles that pin the controller stay assignable.
+  setController?: (patch: { externalController?: string; secret?: string }) => void
   validate: (configPath: string) => Promise<{ valid: boolean; message: string }>
   on: ((event: 'log', cb: (l: KernelLogLine) => void) => void) &
     ((event: 'state', cb: (s: KernelState) => void) => void)

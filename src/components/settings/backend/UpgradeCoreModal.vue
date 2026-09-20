@@ -1,7 +1,7 @@
 <template>
   <!--
     DialogWrapper 会 teleport 到 #app-content,而那正是挂载本组件的 App 根节点 ——
-    首帧它还没进 DOM。等挂载完再渲染,与同处 App 根下的 BackendManager 一致。
+    首帧它还没进 DOM。等挂载完再渲染,与同处 App 根下的 ConfirmDialogHost 一致。
   -->
   <DialogWrapper
     v-if="isReady"

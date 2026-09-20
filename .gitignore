@@ -33,11 +33,18 @@ coverage
 # 构建产物：pnpm build:server 的 esbuild 输出，pnpm start 时按需重新生成
 /dist-server/
 
-# 运行时产物：下载的内核二进制、agent 生成的配置/锁文件与 profile 目录,不入库
+# 运行时产物：内核二进制、agent 的 SQLite 库/配置/锁文件/profile 目录全部不入库。
+# qoqclashd.sqlite 里存着面板登录密码(= 内核 Clash API secret)与订阅地址,
+# 一旦提交就等于把密码和订阅链接公开。
 /kernel/
-/data/config/
-/data/server.lock
-/data/profiles/
+/data/
+/packages/agent/data/
+/packages/agent/kernel/
 
 # 设计图纸留档（仅本地参考，不参与构建）
 /design/
+
+# 本地环境变量：可能写着 API_SECRET / CONTROL_TOKEN，一律不入库（模板另存）
+.env
+.env.*
+!.env.example
