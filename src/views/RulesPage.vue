@@ -191,16 +191,9 @@
           </div>
           <div
             v-if="!filteredInbounds.length"
-            class="text-base-content/60 flex flex-col items-center gap-2 py-6 text-sm"
+            class="text-base-content/60 py-6 text-center text-sm"
           >
             {{ $t('inboundEmpty') }}
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              @click="openCreate"
-            >
-              <PlusIcon class="h-4 w-4" /> {{ $t('inboundAdd') }}
-            </button>
           </div>
         </div>
         <div
@@ -479,16 +472,9 @@
           </div>
           <div
             v-if="!filteredSubRules.length"
-            class="text-base-content/60 col-span-full flex flex-col items-center gap-2 py-6 text-sm"
+            class="text-base-content/60 col-span-full py-6 text-center text-sm"
           >
             {{ $t('subRuleEmpty') }}
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              @click="openCreateSubRule"
-            >
-              <PlusIcon class="h-4 w-4" /> {{ $t('subRuleAdd') }}
-            </button>
           </div>
         </div>
         <div
@@ -985,6 +971,8 @@ import MainEntryEditor from '@/components/routing/MainEntryEditor.vue'
 import RuleListEditor, { type RuleListRow } from '@/components/routing/RuleListEditor.vue'
 import RuleProviderEditor from '@/components/routing/RuleProviderEditor.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { useColumnPicker, type ColumnOption } from '@/composables/useColumnPicker'
+import { confirmDanger } from '@/helper/confirmDialog'
 import { showNotification } from '@/helper/notification'
 import { notifyRequestError } from '@/helper/requestError'
 import { useStorage } from '@/helper/storage'
@@ -1071,31 +1059,31 @@ const columnStorage: Record<ColumnSet, ReturnType<typeof useStorage<string[]>>> 
   providers: providerColumns,
 }
 
-const columnOptions = computed<{ key: string; label: string; set: ColumnSet }[]>(() => {
+const columnOptions = computed<ColumnOption[]>(() => {
   if (tab.value === 'rules') {
     return [
-      { set: 'subrules' as const, key: 'count', label: t('ruleCount') },
-      { set: 'subrules', key: 'terminal', label: t('subRuleRulesLabel') },
-      { set: 'subrules', key: 'references', label: t('subRuleReferencesColumn') },
+      { key: 'count', label: t('ruleCount') },
+      { key: 'terminal', label: t('subRuleRulesLabel') },
+      { key: 'references', label: t('subRuleReferencesColumn') },
     ]
   }
   if (tab.value === 'ruleSets') {
     return [
-      { set: 'providers' as const, key: 'type', label: t('type') },
-      { set: 'providers', key: 'behavior', label: t('ruleProviderBehavior') },
-      { set: 'providers', key: 'url', label: t('ruleProviderUrl') },
-      { set: 'providers', key: 'interval', label: t('ruleProviderInterval') },
-      { set: 'providers', key: 'references', label: t('subRuleReferencesColumn') },
+      { key: 'type', label: t('type') },
+      { key: 'behavior', label: t('ruleProviderBehavior') },
+      { key: 'url', label: t('ruleProviderUrl') },
+      { key: 'interval', label: t('ruleProviderInterval') },
+      { key: 'references', label: t('subRuleReferencesColumn') },
     ]
   }
   return [
-    { set: 'inbounds' as const, key: 'type', label: t('type') },
-    { set: 'inbounds', key: 'port', label: t('port') },
-    { set: 'inbounds', key: 'listen', label: t('inboundListen') },
-    { set: 'inbounds', key: 'udp', label: t('inboundUdp') },
-    { set: 'inbounds', key: 'rule', label: t('inboundSubRule') },
-    { set: 'inbounds', key: 'proxy', label: t('inboundFixedProxy') },
-    { set: 'inbounds', key: 'tun', label: t('tunSettings') },
+    { key: 'type', label: t('type') },
+    { key: 'port', label: t('port') },
+    { key: 'listen', label: t('inboundListen') },
+    { key: 'udp', label: t('inboundUdp') },
+    { key: 'rule', label: t('inboundSubRule') },
+    { key: 'proxy', label: t('inboundFixedProxy') },
+    { key: 'tun', label: t('tunSettings') },
   ]
 })
 
@@ -1110,24 +1098,12 @@ const activeColumns = computed({
   },
 })
 
-const availableColumns = computed({
-  get: () =>
-    columnOptions.value
-      .filter((opt) => !activeColumns.value.includes(opt.key))
-      .map((opt) => opt.key),
-  set: () => {},
-})
-
-const getColumnLabel = (key: string) =>
-  columnOptions.value.find((opt) => opt.key === key)?.label || key
-
-const removeColumn = (key: string) => {
-  activeColumns.value = activeColumns.value.filter((col) => col !== key)
-}
-
-const addColumn = (key: string) => {
-  if (!activeColumns.value.includes(key)) activeColumns.value = [...activeColumns.value, key]
-}
+const {
+  available: availableColumns,
+  labelOf: getColumnLabel,
+  add: addColumn,
+  remove: removeColumn,
+} = useColumnPicker(activeColumns, columnOptions)
 
 // ── 过滤 ────────────────────────────────────────────────────────
 const keyword = () => search.value.trim().toLowerCase()
@@ -1354,16 +1330,11 @@ const saveSubFromEditor = (name: string, rows: RuleListRow[], originalName?: str
   editingSubRule.value = null
 }
 
-const confirmDeleteSubRule = async (sub: SubRuleDraft) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('subRuleDeleteConfirm', { name: sub.name }),
-    confirmButtonClass: 'btn-error',
+const confirmDeleteSubRule = (sub: SubRuleDraft) =>
+  confirmDanger(t('subRuleDeleteConfirm', { name: sub.name }), () => {
+    removeSubRule(sub.name)
+    showNotification({ content: 'routingDeleted', type: 'alert-success' })
   })
-  if (!result.confirmed) return
-  removeSubRule(sub.name)
-  showNotification({ content: 'routingDeleted', type: 'alert-success' })
-}
 
 // ── 子入口（listeners） ─────────────────────────────────────────
 const inboundEditorOpen = ref(false)
@@ -1380,16 +1351,11 @@ const saveInbound = (payload: InboundDraft) => {
   editingInbound.value = null
 }
 
-const confirmDeleteInbound = async (inbound: InboundDraft) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('inboundDeleteConfirm', { name: inbound.name }),
-    confirmButtonClass: 'btn-error',
+const confirmDeleteInbound = (inbound: InboundDraft) =>
+  confirmDanger(t('inboundDeleteConfirm', { name: inbound.name }), () => {
+    removeRoutingInbound(inbound.id)
+    showNotification({ content: 'routingDeleted', type: 'alert-success' })
   })
-  if (!result.confirmed) return
-  removeRoutingInbound(inbound.id)
-  showNotification({ content: 'routingDeleted', type: 'alert-success' })
-}
 
 // ── 规则集合（rule-providers） ──────────────────────────────────
 const providerEditorOpen = ref(false)
@@ -1413,16 +1379,11 @@ const saveProvider = (payload: RuleProviderDraft, originalName?: string) => {
   editingProvider.value = null
 }
 
-const confirmDeleteProvider = async (provider: RuleProviderDraft) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('ruleProviderDeleteConfirm', { name: provider.name }),
-    confirmButtonClass: 'btn-error',
+const confirmDeleteProvider = (provider: RuleProviderDraft) =>
+  confirmDanger(t('ruleProviderDeleteConfirm', { name: provider.name }), () => {
+    removeRuleProvider(provider.name)
+    showNotification({ content: 'routingDeleted', type: 'alert-success' })
   })
-  if (!result.confirmed) return
-  removeRuleProvider(provider.name)
-  showNotification({ content: 'routingDeleted', type: 'alert-success' })
-}
 
 // ── 新建 ────────────────────────────────────────────────────────
 const openCreate = () => {
