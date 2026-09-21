@@ -16,7 +16,7 @@ import {
   setResponseHeader,
   setResponseStatus,
 } from 'h3'
-import { readFile as defaultReadFile, rm, writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { KERNEL_MIRRORS } from './kernel/assets'
 import { listMihomoVersions } from './kernel/fetch-kernel'
@@ -128,7 +128,6 @@ export interface ControlRouterDeps {
     installedVersion?: string
   }>
   geoFetch?: typeof fetch // override for tests; defaults to global fetch
-  readFile?: typeof defaultReadFile // override for tests; defaults to fs/promises readFile
   storage?: AgentStorage
 }
 
@@ -146,7 +145,6 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     kernelManager,
     tunController,
     geoFetch,
-    readFile = defaultReadFile,
   } = deps
 
   // ---- Auth middleware: applied to every route except public ones. ----
@@ -756,23 +754,9 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     }),
   )
 
-  // ---- Runtime config (read-only) ----
-  // Returns the actual file the kernel runs with -f. At runtime this holds the
-  // supervisor-injected external-controller/secret/mixed-port, so it differs from
-  // the active profile source served by GET /config. Missing file -> ''.
-  router.get(
-    `${PREFIX}/config/runtime`,
-    defineEventHandler(async (event) => {
-      setResponseHeader(event, 'content-type', 'text/yaml')
-      try {
-        return await readFile(deps.activeConfigPath, 'utf8')
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return ''
-        throw err
-      }
-    }),
-  )
-
+  // GET /config 返回 profile 源文本。曾经并存的 GET /config/runtime 返回内核实际
+  // 加载的 active.yaml，而 supervisor 会往里注入 `secret:`（= 面板密码），等于把
+  // 密码发给任何登录态请求，所以该路由连同 'runtime-config' 能力一起删掉了。
   // ---- Config sections (top-level key read/write on the active profile) ----
   // GET reads one parsed section (null when absent / no active profile). PUT
   // replaces that section on the active profile content, then re-activates

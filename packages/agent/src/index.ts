@@ -300,12 +300,21 @@ export function createAgent(opts: CreateAgentOptions) {
       return { ok: true, path: binaryPath, started: false, status: state }
     }
 
-    const { binPath } = await fetchKernel(process.platform, process.arch, runtimeKernelDir, {
-      ...(version ? { version } : {}),
-      ...(options.mirror ? { mirror: options.mirror } : {}),
-    })
+    const { binPath, sha256, verified } = await fetchKernel(
+      process.platform,
+      process.arch,
+      runtimeKernelDir,
+      {
+        ...(version ? { version } : {}),
+        ...(options.mirror ? { mirror: options.mirror } : {}),
+      },
+    )
     binaryPath = binPath
     supervisor.setBinaryPath(binPath)
+    // 摘要只进日志：改接口返回结构要连带对齐同一函数里其它几个提前返回分支。
+    console.log(
+      `[qoqclashd] kernel ${sha256} ${verified ? '与账本一致' : '首次记录进内核目录账本'}`,
+    )
     // 记录本次安装的 release tag，供设置页判断“已是最新 / 可更新”。
     await storage.set(KV.installedVersion, JSON.stringify(version ?? MIHOMO_VERSION))
     let started: KernelState
@@ -454,7 +463,6 @@ export function createAgent(opts: CreateAgentOptions) {
       'logs-sse',
       'kernel-control',
       'geo-assets',
-      'runtime-config',
       'config-sections',
       'visual-config-editor',
       ...(systemProxy ? ['system-proxy'] : []),

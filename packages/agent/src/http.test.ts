@@ -1128,41 +1128,15 @@ describe('createControlRouter — runtime config viewer', () => {
   let srv: Awaited<ReturnType<typeof mount>>
   afterEach(async () => srv?.close())
 
-  it('gET /api/control/config/runtime returns the activeConfigPath file as text/yaml', async () => {
-    const runtimeYaml = 'mixed-port: 7890\nexternal-controller: 127.0.0.1:9090\nsecret: sek\n'
-    const readFile = vi.fn(async () => runtimeYaml)
-    const deps = {
-      ...makeDeps(),
-      activeConfigPath: '/home/active.yaml',
-      readFile: readFile as unknown as typeof import('node:fs/promises').readFile,
-    }
-    srv = await mount(deps as never)
+  // active.yaml 里被 supervisor 注入了 `secret:`（= 面板密码），所以这个路由被
+  // 永久移除；留一条断言，防止有人再把它加回来。
+  it('gET /api/control/config/runtime 不再暴露 active.yaml（含 secret）', async () => {
+    srv = await mount(makeDeps())
     const res = await fetch(`${srv.base}/api/control/config/runtime`)
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toContain('text/yaml')
-    expect(await res.text()).toBe(runtimeYaml)
-    // Reads the actual activeConfigPath file (not the active profile source).
-    expect(readFile).toHaveBeenCalledWith('/home/active.yaml', 'utf8')
+    expect(res.status).toBe(404)
   })
 
-  it('gET /api/control/config/runtime returns empty string when the file does not exist', async () => {
-    const readFile = vi.fn(async () => {
-      const err = new Error('ENOENT') as NodeJS.ErrnoException
-      err.code = 'ENOENT'
-      throw err
-    })
-    const deps = {
-      ...makeDeps(),
-      activeConfigPath: '/home/missing.yaml',
-      readFile: readFile as unknown as typeof import('node:fs/promises').readFile,
-    }
-    srv = await mount(deps as never)
-    const res = await fetch(`${srv.base}/api/control/config/runtime`)
-    expect(res.status).toBe(200)
-    expect(await res.text()).toBe('')
-  })
-
-  it('gET /api/control/config (active profile source) still works alongside runtime', async () => {
+  it('gET /api/control/config (active profile source) 仍然可用', async () => {
     const deps = makeDeps()
     deps.profiles.getActiveId = vi.fn(async () => 'p1')
     srv = await mount(deps)

@@ -46,7 +46,6 @@ describe('createAgent', () => {
         'logs-sse',
         'kernel-control',
         'geo-assets',
-        'runtime-config',
         'config-sections',
         'visual-config-editor',
       ],
@@ -61,11 +60,6 @@ describe('createAgent', () => {
   it('info().features always includes geo-assets (homeDir-backed, no controller)', () => {
     const agent = createAgent(opts())
     expect(agent.info().features).toContain('geo-assets')
-  })
-
-  it('info().features always includes runtime-config (reads activeConfigPath)', () => {
-    const agent = createAgent(opts())
-    expect(agent.info().features).toContain('runtime-config')
   })
 
   it('info().features always includes config-sections (active-profile YAML editing)', () => {

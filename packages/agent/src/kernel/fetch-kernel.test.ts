@@ -37,24 +37,18 @@ describe('fetchKernel', () => {
 
   it('linux/amd64: uses the -compatible asset', async () => {
     const dest = tmp()
-    const fakeFetch = vi.fn(
-      async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }),
-    )
+    const fakeFetch = vi.fn(async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }))
     await fetchKernel('linux', 'amd64', dest, {
       fetch: fakeFetch as unknown as typeof fetch,
     })
-    expect(
-      (
-        fakeFetch.mock.calls as unknown as [string][][]
-      )[0]![0] as unknown as string,
-    ).toContain(`mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz`)
+    expect((fakeFetch.mock.calls as unknown as [string][][])[0]![0] as unknown as string).toContain(
+      `mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz`,
+    )
   })
 
   it('chmods the binary 0o755 on posix', async () => {
     const dest = tmp()
-    const fakeFetch = vi.fn(
-      async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }),
-    )
+    const fakeFetch = vi.fn(async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }))
     const { binPath } = await fetchKernel('darwin', 'arm64', dest, {
       fetch: fakeFetch as unknown as typeof fetch,
     })
@@ -63,12 +57,49 @@ describe('fetchKernel', () => {
     }
   })
 
+  it('首次下载把摘要写进账本，同一资产再次下载算作已核对', async () => {
+    const dest = tmp()
+    const rawBinary = Buffer.from('same-bytes-every-time')
+    const fakeFetch = vi.fn(async () => new Response(gzipSync(rawBinary), { status: 200 }))
+    const opts = { fetch: fakeFetch as unknown as typeof fetch }
+
+    const first = await fetchKernel('linux', 'arm64', dest, opts)
+    expect(first.verified).toBe(false)
+    const ledgerPath = join(dest, 'kernel-sha256.json')
+    expect(JSON.parse(readFileSync(ledgerPath, 'utf8'))).toEqual({
+      [`mihomo-linux-arm64-${MIHOMO_VERSION}.gz`]: first.sha256,
+    })
+
+    const second = await fetchKernel('linux', 'arm64', dest, opts)
+    expect(second.verified).toBe(true)
+    expect(second.sha256).toBe(first.sha256)
+    // 摘要没变就不该重写账本
+    expect(JSON.parse(readFileSync(ledgerPath, 'utf8'))).toEqual({
+      [`mihomo-linux-arm64-${MIHOMO_VERSION}.gz`]: first.sha256,
+    })
+  })
+
+  it('同一资产摘要变了就拒绝落盘，保留原二进制', async () => {
+    const dest = tmp()
+    const original = Buffer.from('genuine-mihomo')
+    const swapped = Buffer.from('trojanized-binary!!')
+    let served = original
+    const fakeFetch = vi.fn(async () => new Response(gzipSync(served), { status: 200 }))
+    const opts = { fetch: fakeFetch as unknown as typeof fetch }
+
+    await fetchKernel('linux', 'arm64', dest, opts)
+    served = swapped
+
+    await expect(fetchKernel('linux', 'arm64', dest, opts)).rejects.toThrow(/SHA-256/)
+    // 被替换的二进制绝不能覆盖已核对过的那份，也不给它 chmod 执行位的机会
+    expect(readFileSync(join(dest, 'mihomo'))).toEqual(original)
+  })
+
   it('windows: unzips and extracts mihomo.exe via injected unzipEntry', async () => {
     const dest = tmp()
     const exeBytes = Buffer.from('MZ-fake-exe')
     const fakeFetch = vi.fn(
-      async () =>
-        new Response(Buffer.from('zip-archive-bytes'), { status: 200 }),
+      async () => new Response(Buffer.from('zip-archive-bytes'), { status: 200 }),
     )
     const unzipEntry = vi.fn(async (_buf: Buffer, entry: string) => {
       // the zip entry is the un-versioned full name, not the output binName
@@ -86,9 +117,7 @@ describe('fetchKernel', () => {
 
   it('throws on non-200 response', async () => {
     const dest = tmp()
-    const fakeFetch = vi.fn(
-      async () => new Response('not found', { status: 404 }),
-    )
+    const fakeFetch = vi.fn(async () => new Response('not found', { status: 404 }))
     await expect(
       fetchKernel('linux', 'arm64', dest, {
         fetch: fakeFetch as unknown as typeof fetch,
@@ -98,16 +127,12 @@ describe('fetchKernel', () => {
 
   it('never targets a legacy -go1xx asset name', async () => {
     const dest = tmp()
-    const fakeFetch = vi.fn(
-      async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }),
-    )
+    const fakeFetch = vi.fn(async () => new Response(gzipSync(Buffer.from('bin')), { status: 200 }))
     await fetchKernel('linux', 'arm64', dest, {
       fetch: fakeFetch as unknown as typeof fetch,
     })
     expect(
-      (
-        fakeFetch.mock.calls as unknown as [string][][]
-      )[0]![0] as unknown as string,
+      (fakeFetch.mock.calls as unknown as [string][][])[0]![0] as unknown as string,
     ).not.toContain('-go')
   })
 
@@ -168,17 +193,9 @@ describe('listMihomoVersions', () => {
       fetch: fakeFetch as unknown as typeof fetch,
     })
 
-    expect(requested).toEqual([
-      'https://api.github.com/repos/MetaCubeX/mihomo/releases',
-    ])
+    expect(requested).toEqual(['https://api.github.com/repos/MetaCubeX/mihomo/releases'])
     // Only semantic-version tags, newest first.
-    expect(versions).toEqual([
-      'v1.20.0-beta.1',
-      'v1.19.27',
-      'v1.19.10',
-      'v1.19.2',
-      'v1.18.0',
-    ])
+    expect(versions).toEqual(['v1.20.0-beta.1', 'v1.19.27', 'v1.19.10', 'v1.19.2', 'v1.18.0'])
     // Drops the rolling prerelease + non-version tags.
     expect(versions).not.toContain('Prerelease-Alpha')
     expect(versions).not.toContain('latest')
@@ -213,9 +230,7 @@ describe('listMihomoVersions', () => {
   })
 
   it('throws on a non-200 response', async () => {
-    const fakeFetch = vi.fn(
-      async () => new Response('rate limited', { status: 403 }),
-    )
+    const fakeFetch = vi.fn(async () => new Response('rate limited', { status: 403 }))
     await expect(
       listMihomoVersions({ fetch: fakeFetch as unknown as typeof fetch }),
     ).rejects.toThrow('403')

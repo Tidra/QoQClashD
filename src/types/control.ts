@@ -60,7 +60,6 @@ export type ControlFeature =
   | 'system-proxy'
   | 'kernel-version'
   | 'geo-assets'
-  | 'runtime-config'
   | 'config-sections'
   | 'visual-config-editor'
   | 'tun'

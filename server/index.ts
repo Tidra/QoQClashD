@@ -13,9 +13,9 @@ import {
 } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { extname, join, normalize } from 'node:path'
+import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { WebSocket, WebSocketServer } from 'ws'
+import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { loadRuntimeConfig, normalizeExternalController } from './config.js'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -129,11 +129,17 @@ const proxyMihomoWebSocket = (
         upstreamSocket.close()
     }
 
+    // 客户端一般在 onopen 里就发出订阅帧，那时上游常常还没连上；旧写法把监听挂在
+    // 上游 open 之后，早到的帧被直接丢掉，表现为"连上了却一直不出数据"。
+    const pending: Array<[RawData, boolean]> = []
+    client.on('message', (data, isBinary) => {
+      if (upstreamSocket.readyState === WebSocket.OPEN)
+        upstreamSocket.send(data, { binary: isBinary })
+      else if (upstreamSocket.readyState === WebSocket.CONNECTING) pending.push([data, isBinary])
+    })
+
     upstreamSocket.on('open', () => {
-      client.on('message', (data, isBinary) => {
-        if (upstreamSocket.readyState === WebSocket.OPEN)
-          upstreamSocket.send(data, { binary: isBinary })
-      })
+      for (const [data, binary] of pending.splice(0)) upstreamSocket.send(data, { binary })
       upstreamSocket.on('message', (data, isBinary) => {
         if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary })
       })
@@ -166,17 +172,24 @@ async function proxyMihomo(req: IncomingMessage, res: ServerResponse): Promise<v
   })
 
   res.statusCode = response.status
+  // fetch 已经解压过响应体，上游的 content-encoding/content-length 都不再对应我们
+  // 要写出的字节数，照抄会让客户端按错误长度截断或挂起。
+  const body = Buffer.from(await response.arrayBuffer())
   response.headers.forEach((value, key) => {
-    if (key.toLowerCase() !== 'content-encoding') res.setHeader(key, value)
+    const name = key.toLowerCase()
+    if (name !== 'content-encoding' && name !== 'content-length' && name !== 'transfer-encoding')
+      res.setHeader(key, value)
   })
-  res.end(Buffer.from(await response.arrayBuffer()))
+  res.end(body)
 }
 
 async function sendStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname
   const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
-  const candidate = normalize(join(distDir, relative))
-  const filePath = candidate.startsWith(distDir) ? candidate : join(distDir, 'index.html')
+  const candidate = resolve(distDir, relative)
+  // 前缀比较必须带上路径分隔符，否则 /app/dist 会把邻居 /app/dist-server 也算"在里面"。
+  const inside = candidate === distDir || candidate.startsWith(distDir + sep)
+  const filePath = inside ? candidate : join(distDir, 'index.html')
   const finalPath =
     existsSync(filePath) && statSync(filePath).isFile() ? filePath : join(distDir, 'index.html')
 
@@ -189,7 +202,10 @@ async function sendStatic(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   res.statusCode = 200
   res.setHeader('Content-Type', contentTypes[extname(finalPath)] || 'application/octet-stream')
-  createReadStream(finalPath).pipe(res)
+  // 客户端中途断开是常态（浏览器换页就 abort），pipe 不接 error 会把进程带崩。
+  const stream = createReadStream(finalPath)
+  stream.on('error', () => res.destroy())
+  stream.pipe(res)
 }
 
 const unauthorized = (res: ServerResponse) => {
@@ -219,7 +235,12 @@ const server = createServer((req, res) => {
     })
     return
   }
-  void sendStatic(req, res)
+  sendStatic(req, res).catch((error: unknown) => {
+    if (res.headersSent) return res.destroy()
+    res.statusCode = 500
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.end(`static serving failed: ${error instanceof Error ? error.message : String(error)}`)
+  })
 })
 
 server.on('upgrade', (req, socket, head) => {
@@ -238,8 +259,10 @@ const shutdown = async (signal: string) => {
   console.log(`[qoqclashd] received ${signal}, shutting down`)
   server.close()
   await agent.supervisor.dispose()
+  // 只在锁仍然属于本进程时删除：接管别人的锁之后，本进程退出不能把新主人的锁
+  // 一起删掉，否则第三个实例能在两个实例都在跑时抢进来。
   try {
-    unlinkSync(lockPath)
+    if (Number(readFileSync(lockPath, 'utf8').trim()) === process.pid) unlinkSync(lockPath)
   } catch {
     // 锁文件可能已被清理
   }

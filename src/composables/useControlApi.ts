@@ -256,12 +256,6 @@ export function useControlApi() {
     // geosite/mmdb databases into the kernel home dir and echoes { ok, files }.
     updateGeoAssets: () => client.post('geo/update').json<GeoUpdateResult>(),
 
-    // Runtime config viewer (capability-gated 'runtime-config'). GET returns the
-    // ACTUAL config file the kernel runs with -f as text/yaml (it carries the
-    // supervisor-injected external-controller/secret/mixed-port), so it is read
-    // as text — not JSON. Missing file resolves to ''.
-    getRuntimeConfig: () => client.get('config/runtime').text(),
-
     // Active profile SOURCE (GET /config): the last-applied profile yaml without
     // the supervisor-injected runtime keys — the right baseline to diff the
     // panel draft against. Resolves to '' when no profile is active.

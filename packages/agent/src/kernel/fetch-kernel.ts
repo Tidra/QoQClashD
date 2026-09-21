@@ -1,9 +1,34 @@
 import { Buffer } from 'node:buffer'
-import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { MIHOMO_VERSION, applyMirror, mihomoAsset } from './assets'
 import { unzipEntry as defaultUnzipEntry } from './unzip-entry'
+
+// mihomo 的 release 不提供任何校验文件（没有 SHA256SUMS / checksums.txt，GitHub
+// API 也不暴露资产摘要），所以只能自己记账：首次下载把可执行文件的 SHA-256 写进
+// 内核目录的账本，之后同一资产再下载必须一致，否则视为被替换、直接拒绝。
+// 这挡不住首次下载本身，但能挡住镜像站事后偷换二进制。
+const LEDGER_FILE = 'kernel-sha256.json'
+
+type DigestLedger = Record<string, string>
+
+const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex')
+
+async function readLedger(path: string): Promise<DigestLedger> {
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const entries = Object.entries(parsed as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    )
+    return Object.fromEntries(entries)
+  } catch {
+    // 文件不存在或损坏都按"还没有账本"处理
+    return {}
+  }
+}
 
 export interface FetchKernelDeps {
   fetch?: typeof fetch
@@ -23,7 +48,7 @@ export async function fetchKernel(
   arch: string,
   destDir: string,
   deps: FetchKernelDeps = {},
-): Promise<{ binPath: string }> {
+): Promise<{ binPath: string; sha256: string; verified: boolean }> {
   const doFetch = deps.fetch ?? fetch
   const unzipEntry = deps.unzipEntry ?? defaultUnzipEntry
   const asset = mihomoAsset(os, arch, deps.version ?? MIHOMO_VERSION)
@@ -46,11 +71,28 @@ export async function fetchKernel(
 
   await mkdir(destDir, { recursive: true })
   const binPath = join(destDir, asset.binName)
+  const ledgerPath = join(destDir, LEDGER_FILE)
+  const digest = sha256(binary)
+  const ledger = await readLedger(ledgerPath)
+  const known = ledger[asset.name]
+  if (known && known !== digest) {
+    throw new Error(
+      `fetchKernel: SHA-256 与 ${LEDGER_FILE} 里记录的不一致，已拒绝写入\n` +
+        `  asset:    ${asset.name}\n` +
+        `  expected: ${known}\n` +
+        `  actual:   ${digest}\n` +
+        `  镜像站可能替换了二进制。确认无误后再删除账本条目重试。`,
+    )
+  }
   await writeFile(binPath, binary)
   if (process.platform !== 'win32') {
     await chmod(binPath, 0o755)
   }
-  return { binPath }
+  if (!known) {
+    // 只有真正落盘成功才记账，避免把一次失败下载的首次摘要固化下来。
+    await writeFile(ledgerPath, JSON.stringify({ ...ledger, [asset.name]: digest }, null, 2))
+  }
+  return { binPath, sha256: digest, verified: Boolean(known) }
 }
 
 const RELEASES_URL = 'https://api.github.com/repos/MetaCubeX/mihomo/releases'
