@@ -2,6 +2,7 @@ import { markUnauthorized } from '@/helper/unauthorized'
 import type {
   ControlInfo,
   GeoUpdateResult,
+  KernelDownloadStatus,
   KernelState,
   KernelVersions,
   ProfileDetail,
@@ -117,7 +118,12 @@ export function useControlApi() {
           started?: boolean
           status?: KernelState
           error?: string
+          cancelled?: boolean
         }>(),
+    // 下载进行中的进度快照；progress 为 null 表示没有在跑的下载。
+    getKernelEnsureStatus: () => client.get('kernel/ensure/status').json<KernelDownloadStatus>(),
+    // 取消在途下载。ok=false 表示按下时已经没有在途下载了（刚好下完）。
+    cancelKernelEnsure: () => client.post('kernel/ensure/cancel').json<{ ok: boolean }>(),
     // Installable mihomo release tags (newest first) + whitelisted mirrors.
     getKernelReleases: () =>
       client.get('kernel/releases', { timeout: KERNEL_RELEASES_TIMEOUT }).json<KernelReleases>(),

@@ -242,14 +242,16 @@ export enum LOG_LEVEL {
   Silent = 'silent',
 }
 
+// 侧栏/底部导航的顺序就是这个枚举的声明顺序（renderRoutes 用 Object.values），
+// nodePools/subscriptions 被过滤掉不显示，所以分流中心紧跟在节点之后。
 export enum ROUTE_NAME {
   overview = 'overview',
   proxies = 'proxies',
+  rules = 'rules',
   nodePools = 'nodePools',
   subscriptions = 'subscriptions',
   connections = 'connections',
   logs = 'logs',
-  rules = 'rules',
   settings = 'settings',
   setup = 'setup',
 }

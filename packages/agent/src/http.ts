@@ -31,6 +31,8 @@ import type { AgentStorage } from './storage'
 import { TunPreconditionError } from './tun'
 import type {
   EnsureKernelOptions,
+  EnsureKernelResult,
+  KernelDownloadProgress,
   KernelLogLine,
   KernelManager,
   KernelState,
@@ -80,13 +82,11 @@ export interface ControlRouterDeps {
   systemProxy?: SystemProxyController // OS proxy controller; capability-gated
   kernelManager?: KernelManager // kernel version mgmt; capability-gated
   tunController?: TunController // TUN mode controller; capability-gated
-  ensureKernel?: (options?: EnsureKernelOptions) => Promise<{
-    ok: boolean
-    path?: string
-    started?: boolean
-    status?: KernelState
-    error?: string
-  }>
+  ensureKernel?: (options?: EnsureKernelOptions) => Promise<EnsureKernelResult>
+  // 进行中的内核下载快照；POST /kernel/ensure 要等整个下载结束，进度靠轮询这里。
+  kernelDownloadStatus?: () => KernelDownloadProgress | null
+  /** 取消在途的内核下载；没有在途下载时返回 false。 */
+  cancelKernelDownload?: () => boolean
   setRuntimeRoot?: (root: string) => Promise<{
     ok: boolean
     root: string
@@ -384,12 +384,26 @@ export function createControlRouter(deps: ControlRouterDeps): App {
         }
       }
       const body = (await readBody(event).catch(() => ({}))) as EnsureKernelOptions
-      return deps.ensureKernel({
-        ...(typeof body?.mirror === 'string' ? { mirror: body.mirror } : {}),
-        ...(typeof body?.version === 'string' ? { version: body.version } : {}),
-        ...(body?.force === true ? { force: true } : {}),
-      })
+      // 下载失败不要让 h3 抛成 500：面板只拿得到「HTTP 500」，镜像站断流、TOFU
+      // 摘要不符这些真正的原因全丢在响应体里。统一折进 ok:false，沿用同一条提示通路。
+      try {
+        return await deps.ensureKernel({
+          ...(typeof body?.mirror === 'string' ? { mirror: body.mirror } : {}),
+          ...(typeof body?.version === 'string' ? { version: body.version } : {}),
+          ...(body?.force === true ? { force: true } : {}),
+        })
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
     }),
+  )
+  router.get(
+    `${PREFIX}/kernel/ensure/status`,
+    defineEventHandler(() => ({ progress: deps.kernelDownloadStatus?.() ?? null })),
+  )
+  router.post(
+    `${PREFIX}/kernel/ensure/cancel`,
+    defineEventHandler(() => ({ ok: deps.cancelKernelDownload?.() === true })),
   )
   // Available mihomo release tags (newest first) + whitelisted download
   // mirrors, for the settings-page kernel manager. Network failures degrade to

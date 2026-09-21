@@ -17,6 +17,38 @@ export interface EnsureKernelOptions {
   force?: boolean
 }
 
+export interface EnsureKernelResult {
+  ok: boolean
+  path?: string
+  started?: boolean
+  status?: KernelState
+  error?: string
+  /** 下载被用户取消：不是故障，面板据此弹中性提示而非红色报错。 */
+  cancelled?: boolean
+}
+
+/**
+ * GET /kernel/ensure/status：一次内核下载的进度快照。
+ *
+ * 下载是长请求（47 MB），POST 要等它整体结束，所以进度单独走轮询。total=0 表示
+ * 服务端没给 Content-Length，只能显示已收字节数。
+ */
+export interface KernelDownloadProgress {
+  phase: 'downloading' | 'starting' | 'done' | 'failed' | 'cancelled'
+  downloaded: number
+  total: number
+  version: string
+  error?: string
+}
+
+/**
+ * 接口壳子。裸 null 会被 h3 编译成 204 空响应，客户端的 `.json()` 直接抛，
+ * 所以「没有在途下载」也要以一个对象体返回。
+ */
+export interface KernelDownloadStatus {
+  progress: KernelDownloadProgress | null
+}
+
 export interface SupervisorOptions {
   binaryPath: string // resolved mihomo (.exe on win)
   homeDir: string // mihomo -d working dir (writable)

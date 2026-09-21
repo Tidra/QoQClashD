@@ -206,6 +206,15 @@ export const routingMainEntry = useStorage<MainEntryDraft>(
   defaultMainEntry(),
 )
 
+/**
+ * 默认分流内容（主规则 + 内置规则集合）的代次。
+ *
+ * 只用来跑一次性迁移：老库里的默认三段是「局域网 IP-CIDR + GEOSITE/GEOIP cn」，
+ * 现改为 reject/proxy/direct 规则集合。用户改过就不动，删掉也不会再冒出来。
+ */
+const DEFAULT_RULES_GENERATION = 2
+const routingDefaultsGeneration = useStorage<number>('config/routing-defaults-generation', 0)
+
 /** 规则按优先级从上到下；内置默认规则始终垫底 */
 const sortBuiltinLast = (rules: RoutingRuleDraft[]) => [
   ...rules.filter((rule) => !rule.builtin),
@@ -307,52 +316,82 @@ export const ruleProviderReferenceCount = (name: string) =>
 
 // ── 默认种子（追加式、幂等） ──────────────────────────────────────
 
+const LOYAL_SOLDIER = 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release'
+
 /**
- * 冷启动默认规则：局域网直连 → 国内直连 → 其余全部走「全部节点」。
+ * 内置默认规则集合：Loyalsoldier 的 reject/proxy/direct 三份域名集。
  *
- * 局域网用显式 IP-CIDR 而不是 `RULE-SET,LAN`：后者要先有一个同名 rule-provider，
- * 用户删掉那个集合就会让这条规则指向空引用、整个配置在内核侧失效。
+ * `format: text` 不能省——这三份 release 资产是纯文本规则列表，mihomo 的
+ * rule-provider 默认按 yaml 解析，不写就会解析失败。
  */
-const defaultRoutingRules = (): RoutingRuleDraft[] => {
-  const lan = (id: string, payload: string): RoutingRuleDraft => ({
-    id,
-    type: 'IP-CIDR',
-    payload,
-    target: 'DIRECT',
-    noResolve: true,
+export const DEFAULT_RULE_PROVIDERS: RuleProviderDraft[] = ['reject', 'proxy', 'direct'].map(
+  (name) => ({
+    name,
+    type: 'http',
+    format: 'text',
+    behavior: 'domain',
+    url: `${LOYAL_SOLDIER}/${name}.txt`,
+    path: `./ruleset/${name}.yaml`,
+    interval: 86400,
+  }),
+)
+
+/** 冷启动默认主规则：广告拦截 → 国内直连集合 → GEOIP 直连 → 其余走「全部节点」。 */
+const defaultRoutingRules = (): RoutingRuleDraft[] => [
+  {
+    id: 'rule-set-reject',
+    type: 'RULE-SET',
+    payload: 'reject',
+    target: 'REJECT',
     enabled: true,
-  })
-  return [
-    lan('rule-lan-10', '10.0.0.0/8'),
-    lan('rule-lan-100', '100.64.0.0/10'),
-    lan('rule-lan-127', '127.0.0.0/8'),
-    lan('rule-lan-172', '172.16.0.0/12'),
-    lan('rule-lan-192', '192.168.0.0/16'),
-    { ...lan('rule-lan-v6', 'fc00::/7'), type: 'IP-CIDR6' },
-    {
-      id: 'rule-geosite-cn',
-      type: 'GEOSITE',
-      payload: 'cn',
-      target: 'DIRECT',
-      enabled: true,
-    },
-    {
-      id: 'rule-geoip-cn',
-      type: 'GEOIP',
-      payload: 'CN',
-      target: 'DIRECT',
-      enabled: true,
-    },
-    {
-      id: DEFAULT_RULE_ID,
-      type: 'MATCH',
-      payload: '',
-      target: ALL_NODES_GROUP_NAME,
-      enabled: true,
-      builtin: true,
-    },
-  ]
-}
+  },
+  {
+    id: 'rule-set-proxy',
+    type: 'RULE-SET',
+    payload: 'proxy',
+    target: ALL_NODES_GROUP_NAME,
+    enabled: true,
+  },
+  {
+    id: 'rule-set-direct',
+    type: 'RULE-SET',
+    payload: 'direct',
+    target: 'DIRECT',
+    enabled: true,
+  },
+  {
+    id: 'rule-geoip-cn',
+    type: 'GEOIP',
+    payload: 'CN',
+    target: 'DIRECT',
+    enabled: true,
+  },
+  {
+    id: DEFAULT_RULE_ID,
+    type: 'MATCH',
+    payload: '',
+    target: ALL_NODES_GROUP_NAME,
+    enabled: true,
+    builtin: true,
+  },
+]
+
+// 旧一代默认主规则的 id 集合；规则表恰好还是这一组（用户没动过）时才整块替换。
+const LEGACY_DEFAULT_RULE_IDS = [
+  'rule-lan-10',
+  'rule-lan-100',
+  'rule-lan-127',
+  'rule-lan-172',
+  'rule-lan-192',
+  'rule-lan-v6',
+  'rule-geosite-cn',
+  'rule-geoip-cn',
+  DEFAULT_RULE_ID,
+]
+
+const isUntouchedLegacyDefaults = (rules: RoutingRuleDraft[]) =>
+  rules.length === LEGACY_DEFAULT_RULE_IDS.length &&
+  rules.every((rule) => LEGACY_DEFAULT_RULE_IDS.includes(rule.id))
 
 export const seedRoutingDefaults = () => {
   // v8 曾把主入口建模为内置 listener；顶层属性 store 出现后把它迁移掉
@@ -369,9 +408,24 @@ export const seedRoutingDefaults = () => {
   }
 
   if (routingRules.value.length === 0) {
-    // 冷启动：整张规则表为空才注入默认三段。用户删掉它们后不会在下次启动又冒出来。
+    // 冷启动：整张规则表为空才注入默认五条。用户删掉它们后不会在下次启动又冒出来。
     routingRules.value = defaultRoutingRules()
-    return
+  } else if (
+    routingDefaultsGeneration.value < DEFAULT_RULES_GENERATION &&
+    isUntouchedLegacyDefaults(routingRules.value)
+  ) {
+    // 上一代默认三段是局域网 IP-CIDR + GEOSITE/GEOIP cn；整块换成规则集合版。
+    // 用户改过任意一条就不匹配签名，不动他的表。
+    routingRules.value = defaultRoutingRules()
+  }
+
+  if (routingDefaultsGeneration.value < DEFAULT_RULES_GENERATION) {
+    const existing = new Set(routingRuleProviders.value.map((item) => item.name))
+    const missing = DEFAULT_RULE_PROVIDERS.filter((item) => !existing.has(item.name))
+    if (missing.length) {
+      routingRuleProviders.value = [...routingRuleProviders.value, ...missing]
+    }
+    routingDefaultsGeneration.value = DEFAULT_RULES_GENERATION
   }
 
   if (!routingRules.value.some((item) => item.id === DEFAULT_RULE_ID)) {

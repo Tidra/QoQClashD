@@ -41,6 +41,59 @@ export interface FetchKernelDeps {
    * shells out to the platform's unzip and is covered by MANUAL smoke testing.
    */
   unzipEntry?: (buf: Buffer, entry: string) => Promise<Buffer>
+  /** 每收到一块上报一次；total 为 0 表示服务端没给 Content-Length。 */
+  onProgress?: (downloaded: number, total: number) => void
+  /** 即将覆盖写入二进制前调用：运行中的内核会锁住文件，得先让它让开。 */
+  beforeWrite?: () => Promise<void>
+  /** 取消下载：掐断流，且在落盘前最后再查一次，避免半路取消还覆盖了二进制。 */
+  signal?: AbortSignal
+}
+
+class KernelDownloadCancelled extends Error {
+  constructor() {
+    super('fetchKernel: 下载已取消')
+    this.name = 'KernelDownloadCancelled'
+  }
+}
+
+const throwIfCancelled = (signal?: AbortSignal) => {
+  if (signal?.aborted) throw new KernelDownloadCancelled()
+}
+
+/**
+ * 流式收字节而不是 arrayBuffer()：47 MB 的内核二进制要能报进度，
+ * 顺带避免 Response 内部再复制一份完整 Buffer。
+ */
+async function readBinary(
+  res: Response,
+  onProgress?: FetchKernelDeps['onProgress'],
+  signal?: AbortSignal,
+) {
+  const total = Number(res.headers.get('content-length')) || 0
+  if (!res.body) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    onProgress?.(buf.length, buf.length)
+    return buf
+  }
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  let downloaded = 0
+  for (;;) {
+    throwIfCancelled(signal)
+    // 取消时 undici 抛的是 AbortError；换成自己的类型，调用方才能把「已取消」
+    // 和真的下载故障区分开。
+    const { done, value } = await reader.read().catch((error: unknown) => {
+      throwIfCancelled(signal)
+      throw error
+    })
+    if (done) break
+    if (!value) continue
+    chunks.push(Buffer.from(value))
+    downloaded += value.byteLength
+    onProgress?.(downloaded, total)
+  }
+  throwIfCancelled(signal)
+  return Buffer.concat(chunks)
 }
 
 export async function fetchKernel(
@@ -54,11 +107,11 @@ export async function fetchKernel(
   const asset = mihomoAsset(os, arch, deps.version ?? MIHOMO_VERSION)
   const url = applyMirror(asset.url, deps.mirror)
 
-  const res = await doFetch(url)
+  const res = await doFetch(url, { signal: deps.signal })
   if (!res.ok) {
     throw new Error(`fetchKernel: download failed ${res.status} for ${url}`)
   }
-  const downloaded = Buffer.from(await res.arrayBuffer())
+  const downloaded = await readBinary(res, deps.onProgress, deps.signal)
 
   let binary: Buffer
   if (asset.ext === 'gz') {
@@ -84,6 +137,9 @@ export async function fetchKernel(
         `  镜像站可能替换了二进制。确认无误后再删除账本条目重试。`,
     )
   }
+  // 摘要对不上就不必惊动正在跑的内核：先校验，再让开文件锁。
+  throwIfCancelled(deps.signal)
+  await deps.beforeWrite?.()
   await writeFile(binPath, binary)
   if (process.platform !== 'win32') {
     await chmod(binPath, 0o755)

@@ -31,13 +31,22 @@
             class="badge badge-ghost badge-sm font-mono font-normal"
             >pid {{ kernelState.pid }}</span
           >
-          <span :class="['badge badge-sm', kernelStatusBadgeClass]">{{ kernelState.status }}</span>
+          <span :class="['badge badge-sm', kernelStatusBadgeClass]">{{ kernelStatusLabel }}</span>
         </div>
       </div>
 
       <template v-if="runtimeInfo">
         <div class="setting-item">
-          <div class="setting-item-label">{{ $t('runtimeControl') }}</div>
+          <div class="setting-item-label">
+            {{ $t('runtimeControl') }}
+            <!-- 二进制不在盘上时「启动」是灰的，不写清楚只会让人对着按钮发懵。 -->
+            <div
+              v-if="!kernelState.binaryExists"
+              class="text-error setting-item-summary"
+            >
+              {{ $t('kernelMissingStartHint') }}
+            </div>
+          </div>
           <div class="flex gap-2">
             <button
               class="btn btn-sm btn-primary"
@@ -181,13 +190,44 @@
             <button
               class="btn btn-sm btn-primary"
               :disabled="kernelBusy || kernelDownloadMode === 'uptodate'"
-              @click="downloadKernel"
+              @click="startKernelDownload"
             >
               <span
-                v-if="downloadingKernel"
+                v-if="kernelDownloading"
                 class="loading loading-spinner h-4 w-4"
               ></span>
               <span v-else>{{ $t(kernelDownloadLabel) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 下载是 47 MB 的长请求，POST 要等整体结束，所以进度单独轮询画在这一行。 -->
+        <div
+          v-if="kernelDownloadProgress"
+          class="setting-item"
+        >
+          <div class="setting-item-label">
+            {{ $t(kernelDownloadPhaseLabel) }}
+            <div class="setting-item-summary">{{ kernelDownloadProgressText }}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <progress
+              class="progress progress-primary w-40"
+              :value="kernelDownloadProgress.total ? kernelDownloadProgress.downloaded : undefined"
+              :max="kernelDownloadProgress.total || undefined"
+            ></progress>
+            <!-- 只有还在收字节时能取消：starting 阶段二进制已落盘，掐断只会留下半成品。 -->
+            <button
+              v-if="kernelDownloadProgress.phase === 'downloading'"
+              class="btn btn-sm btn-error"
+              :disabled="kernelDownloadCancelling"
+              @click="cancelKernelDownload"
+            >
+              <span
+                v-if="kernelDownloadCancelling"
+                class="loading loading-spinner h-4 w-4"
+              ></span>
+              <span v-else>{{ $t('cancel') }}</span>
             </button>
           </div>
         </div>
@@ -389,12 +429,20 @@ import {
 } from '@/composables/useKernelBackend'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
 import { applyDraftConfig, applyingConfig, pendingConfigChanges } from '@/helper/applyConfig'
+import {
+  cancelKernelDownload,
+  downloadKernel,
+  kernelDownloadCancelling,
+  kernelDownloadProgress,
+  kernelDownloading,
+  resumeKernelDownload,
+} from '@/helper/kernelDownload'
 import { changePanelPassword } from '@/helper/panelSession'
 import { notifyRequestError } from '@/helper/requestError'
 import { showNotification } from '@/helper/notification'
 import { useStorage } from '@/helper/storage'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowPathIcon, LockClosedIcon } from '@heroicons/vue/24/outline'
 import ConfigYamlModal from './ConfigYamlModal.vue'
@@ -424,14 +472,13 @@ type KernelStateView = {
 const kernelState = ref<KernelStateView>({ status: 'stopped', externalController: '' })
 const releases = ref<{ versions: string[]; mirrors: string[] }>({ versions: [], mirrors: [] })
 const pinnedVersion = ref('')
-const downloadingKernel = ref(false)
 const lifecycleBusy = ref(false)
 const savingPaths = ref(false)
 const savingKernelApi = ref(false)
 const savingPassword = ref(false)
 const kernelBusy = computed(
   () =>
-    downloadingKernel.value ||
+    kernelDownloading.value ||
     lifecycleBusy.value ||
     savingPaths.value ||
     savingKernelApi.value ||
@@ -440,6 +487,28 @@ const kernelBusy = computed(
 const kernelMirror = useStorage<string>('config/kernel-mirror', 'direct')
 const kernelVersion = useStorage<string>('config/kernel-version', '')
 
+// ── 内核下载进度 ─────────────────────────────────────────────────
+// POST /kernel/ensure 要等 47 MB 整个下完才返回，进度只能另开一路轮询。
+// 那一路轮询和按钮的「下载中」态都在 @/helper/kernelDownload 里，本页只是读它 ——
+// 否则切走再回来进度就没了，下载按钮还能再点一次。
+
+const formatMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+const kernelDownloadPhaseLabel = computed(() => {
+  const phase = kernelDownloadProgress.value?.phase
+  if (phase === 'starting') return 'kernelDownloadStarting'
+  if (phase === 'cancelled') return 'kernelDownloadCancelled'
+  return 'kernelDownloading'
+})
+
+const kernelDownloadProgressText = computed(() => {
+  const progress = kernelDownloadProgress.value
+  if (!progress) return ''
+  if (!progress.total) return formatMB(progress.downloaded)
+  const percent = Math.min(100, Math.floor((progress.downloaded / progress.total) * 100))
+  return `${formatMB(progress.downloaded)} / ${formatMB(progress.total)} · ${percent}%`
+})
+
 // agent 不可达 / releases 拉取失败时的兜底仓库列表（与 KERNEL_MIRRORS 键一致）
 const FALLBACK_MIRRORS = ['direct', 'gh-proxy', 'ghfast', 'ghproxy']
 
@@ -447,15 +516,20 @@ const kernelVersionLabel = computed(
   () => kernelState.value.version || kernelState.value.installedVersion || pinnedVersion.value,
 )
 
-const kernelStatusBadgeClass = computed(
-  () =>
-    ({
-      running: 'badge-success',
-      starting: 'badge-warning',
-      stopping: 'badge-warning',
-      errored: 'badge-error',
-      stopped: 'badge-ghost',
-    })[kernelState.value.status],
+const kernelStatusBadgeClass = computed(() => {
+  // 二进制不在盘上时 status 恒为 stopped，「已停止」会被读成「起过又挂了」。
+  if (!kernelState.value.binaryExists) return 'badge-warning'
+  return {
+    running: 'badge-success',
+    starting: 'badge-warning',
+    stopping: 'badge-warning',
+    errored: 'badge-error',
+    stopped: 'badge-ghost',
+  }[kernelState.value.status]
+})
+
+const kernelStatusLabel = computed(() =>
+  kernelState.value.binaryExists ? kernelState.value.status : t('kernelMissingShort'),
 )
 
 // 三态下载按钮：无二进制 → 下载；有二进制且目标版本已装 → 已是最新（禁用）；否则 → 更新。
@@ -669,30 +743,20 @@ const saveRuntimePaths = async () => {
   }
 }
 
-const downloadKernel = async () => {
-  downloadingKernel.value = true
-  try {
-    const result = await controlApi.ensureKernel({
-      mirror: kernelMirror.value,
-      version: kernelVersion.value || undefined,
-      // 已是最新时按钮禁用；这里只会是首次下载或真正的更新。
-      force: kernelDownloadMode.value === 'update',
-    })
-    if (result.ok) {
-      showNotification({ content: 'kernelDownloadSuccess', type: 'alert-success' })
-    } else {
-      showNotification({
-        content: result.error || 'kernelDownloadFailed',
-        type: 'alert-error',
-      })
-    }
-  } catch (error) {
-    notifyRequestError(error)
-  } finally {
-    downloadingKernel.value = false
-    await Promise.all([refreshKernelState(), loadRuntimeInfo()])
-  }
+const startKernelDownload = () => {
+  void downloadKernel({
+    mirror: kernelMirror.value,
+    version: kernelVersion.value || undefined,
+    // 已是最新时按钮禁用；这里只会是首次下载或真正的更新。
+    force: kernelDownloadMode.value === 'update',
+  })
 }
+
+// 下载结束（无论本页面全程在场，还是中途切走、回来时被轮询接上）都要重读一次
+// 内核状态与路径，否则徽章还停在「缺少内核」、已是最新的按钮还能再点。
+watch(kernelDownloading, (downloading, wasDownloading) => {
+  if (wasDownloading && !downloading) void Promise.all([refreshKernelState(), loadRuntimeInfo()])
+})
 
 const runKernelLifecycle = async (action: () => Promise<unknown>) => {
   if (lifecycleBusy.value) return
@@ -733,6 +797,8 @@ onMounted(async () => {
   // 定时器必须在第一个 await 之前注册：onBeforeUnmount 只会跑一次，加载中就切走
   // 的话，await 之后再 setInterval 将永远没人清理。
   kernelPollTimer = setInterval(refreshKernelState, 5000)
+  // 下载可能是在别的页面上发起的（甚至整页刷新过）：先接上仍在途的那一路。
+  resumeKernelDownload()
   await loadRuntimeInfo()
   refreshKernelState()
   try {
@@ -748,7 +814,9 @@ onMounted(async () => {
     // ignore: 保留兜底仓库与仅默认版本的可选项
   }
 })
-onBeforeUnmount(() => clearInterval(kernelPollTimer))
+onBeforeUnmount(() => {
+  clearInterval(kernelPollTimer)
+})
 
 const isVisibleDnsQuery = useIsSettingVisible(k.DNSQuery)
 

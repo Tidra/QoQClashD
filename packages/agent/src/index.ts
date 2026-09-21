@@ -16,6 +16,8 @@ import type { CreateSupervisorOptions } from './supervisor'
 import { createSupervisor } from './supervisor'
 import type {
   EnsureKernelOptions,
+  EnsureKernelResult,
+  KernelDownloadProgress,
   KernelManager,
   KernelState,
   SystemProxyController,
@@ -281,7 +283,15 @@ export function createAgent(opts: CreateAgentOptions) {
     },
   }
 
-  const ensureKernel = async (options: EnsureKernelOptions = {}) => {
+  // 内核下载进度：POST /kernel/ensure 要等整个下载结束，前端靠轮询这份快照画进度条。
+  let kernelDownload: KernelDownloadProgress | undefined
+  let ensureInFlight: Promise<EnsureKernelResult> | undefined
+  // 下载要能中途取消（47 MB 走镜像站可能卡住），所以每趟在途下载握一个 AbortController。
+  let downloadAbort: AbortController | undefined
+
+  const runEnsureKernel = async (
+    options: EnsureKernelOptions = {},
+  ): Promise<EnsureKernelResult> => {
     const version =
       options.version && kernelVersionRe.test(options.version) ? options.version : undefined
     // force / 指定版本时即使二进制已存在也重新下载，实现“更新内核”。
@@ -300,15 +310,45 @@ export function createAgent(opts: CreateAgentOptions) {
       return { ok: true, path: binaryPath, started: false, status: state }
     }
 
-    const { binPath, sha256, verified } = await fetchKernel(
-      process.platform,
-      process.arch,
-      runtimeKernelDir,
-      {
+    const download: KernelDownloadProgress = {
+      phase: 'downloading',
+      downloaded: 0,
+      total: 0,
+      version: version ?? MIHOMO_VERSION,
+    }
+    kernelDownload = download
+    const abort = new AbortController()
+    downloadAbort = abort
+    let binPath: string
+    let sha256: string
+    let verified: boolean
+    try {
+      const fetched = await fetchKernel(process.platform, process.arch, runtimeKernelDir, {
         ...(version ? { version } : {}),
         ...(options.mirror ? { mirror: options.mirror } : {}),
-      },
-    )
+        signal: abort.signal,
+        onProgress: (received, total) => {
+          download.downloaded = received
+          download.total = total
+        },
+        // Windows 锁住正在运行的镜像文件：不停内核，整包下完也只是在 writeFile 上撞
+        // EBUSY，17 MB 白跑。放这里（下载之后）而不是下载之前，代理链路能多活几分钟。
+        beforeWrite: async () => {
+          if (supervisor.getState().status !== 'stopped') await supervisor.stop()
+        },
+      })
+      binPath = fetched.binPath
+      sha256 = fetched.sha256
+      verified = fetched.verified
+    } catch (error) {
+      // 取消可能以两种形态抛回来（自己的 KernelDownloadCancelled、undici 的
+      // AbortError），所以直接问 signal 本身。
+      download.phase = abort.signal.aborted ? 'cancelled' : 'failed'
+      download.error = error instanceof Error ? error.message : String(error)
+      throw error
+    } finally {
+      downloadAbort = undefined
+    }
     binaryPath = binPath
     supervisor.setBinaryPath(binPath)
     // 摘要只进日志：改接口返回结构要连带对齐同一函数里其它几个提前返回分支。
@@ -317,6 +357,7 @@ export function createAgent(opts: CreateAgentOptions) {
     )
     // 记录本次安装的 release tag，供设置页判断“已是最新 / 可更新”。
     await storage.set(KV.installedVersion, JSON.stringify(version ?? MIHOMO_VERSION))
+    download.phase = 'starting'
     let started: KernelState
     let startError: string | undefined
     try {
@@ -325,6 +366,7 @@ export function createAgent(opts: CreateAgentOptions) {
       startError = error instanceof Error ? error.message : String(error)
       started = supervisor.getState()
     }
+    download.phase = 'done'
     return {
       ok: true,
       path: binPath,
@@ -332,6 +374,29 @@ export function createAgent(opts: CreateAgentOptions) {
       status: started,
       ...(startError ? { error: startError } : {}),
     }
+  }
+
+  const ensureKernel = (options: EnsureKernelOptions = {}) => {
+    // 47 MB 的二进制不能下两遍：并发点击或重复引导都复用在途那一次。
+    if (ensureInFlight) return ensureInFlight
+    kernelDownload = undefined
+    ensureInFlight = runEnsureKernel(options)
+      .catch((error): EnsureKernelResult => {
+        // 用户主动取消不是下载故障：折成 ok:false + cancelled，面板才不会弹红色报错。
+        if (kernelDownload?.phase === 'cancelled') return { ok: false, cancelled: true }
+        throw error
+      })
+      .finally(() => {
+        ensureInFlight = undefined
+      })
+    return ensureInFlight
+  }
+
+  /** 取消进行中的内核下载；没有在途下载时返回 false。 */
+  const cancelKernelDownload = () => {
+    if (!downloadAbort) return false
+    downloadAbort.abort()
+    return true
   }
 
   const { systemProxy, kernelManager, tunController } = opts
@@ -492,6 +557,8 @@ export function createAgent(opts: CreateAgentOptions) {
       kernelManager,
       tunController,
       ensureKernel,
+      kernelDownloadStatus: () => kernelDownload ?? null,
+      cancelKernelDownload,
       applyRuntimePaths,
       updateClashApi,
       kernelStatusExtras,

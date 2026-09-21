@@ -260,10 +260,7 @@ import { PROXY_TYPE, TEST_URL } from '@/constant'
 import { speedtestUrl } from '@/store/settings'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { showNotification } from '@/helper/notification'
-import { matchesFilterPattern, normalizeGroupType } from '@/store/proxyGroups'
-
-// 表单留空时回落的默认值；灰字 placeholder 展示的就是它们。
-const GROUP_DEFAULTS = { interval: 3600, timeout: 5000 }
+import { GROUP_DEFAULTS, matchesFilterPattern, normalizeGroupType } from '@/store/proxyGroups'
 
 const props = defineProps<{
   modelValue: boolean

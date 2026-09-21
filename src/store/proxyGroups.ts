@@ -3,37 +3,56 @@ import type { ProxyGroupDraft } from '@/types'
 
 export const proxyGroups = useStorage<ProxyGroupDraft[]>('config/proxy-groups', [])
 
-/** 内置的“全部节点”选择组：成员自动同步全部节点，不允许删除 */
+/** 内置组：成员由节点列表自动同步，不允许编辑/删除 */
 export const ALL_NODES_GROUP_NAME = '全部节点'
+/** 首次启动播种的 url-test 组：建完就归用户，可改名可删除 */
+export const AUTO_URLTEST_GROUP_NAME = '自动选择'
 export const isProtectedGroup = (name: string) => name === ALL_NODES_GROUP_NAME
 
-export const syncAllNodesGroup = (nodeNames: string[]) => {
-  const index = proxyGroups.value.findIndex((group) => group.name === ALL_NODES_GROUP_NAME)
+/** 健康检查组的表单默认值：留空即回落到它们 */
+export const GROUP_DEFAULTS = { interval: 3600, timeout: 5000 }
+
+/**
+ * 「自动选择」的种子：成员交给 filter '.*' 表达，而不是抄一份节点名单。
+ *
+ * 应用配置时 resolveGroupMembers 会把 filter 展开成显式成员，所以这个组播种完就不
+ * 需要再托管 —— 节点增删它自己跟得上，用户改 filter 也没人会给他覆盖回去。
+ */
+export const autoUrlTestSeed = (testUrl: string): ProxyGroupDraft => ({
+  name: AUTO_URLTEST_GROUP_NAME,
+  type: 'url-test',
+  proxies: [],
+  filter: '.*',
+  url: testUrl,
+  interval: GROUP_DEFAULTS.interval,
+  timeout: GROUP_DEFAULTS.timeout,
+})
+
+/** 「全部节点」常驻：成员始终等于当前节点列表 */
+export const syncBuiltInGroups = (nodeNames: string[]) => {
+  const groups = [...proxyGroups.value]
+  const index = groups.findIndex((group) => group.name === ALL_NODES_GROUP_NAME)
   if (index === -1) {
-    proxyGroups.value = [
-      { name: ALL_NODES_GROUP_NAME, type: 'select', proxies: [...nodeNames] },
-      ...proxyGroups.value,
-    ]
-    return
+    groups.push({ name: ALL_NODES_GROUP_NAME, type: 'select', proxies: [...nodeNames] })
+  } else {
+    const current = groups[index]
+    const selected = current['default-selected']
+    const nextProxies = [...nodeNames]
+    const proxiesChanged =
+      current.proxies.length !== nextProxies.length ||
+      current.proxies.some((name, i) => name !== nextProxies[i])
+    if (!proxiesChanged) return
+    groups[index] = {
+      ...current,
+      proxies: nextProxies,
+      'default-selected': selected && nextProxies.includes(selected) ? selected : undefined,
+    }
   }
-  const current = proxyGroups.value[index]
-  const selected = current['default-selected']
-  const nextProxies = [...nodeNames]
-  const unchanged =
-    (!selected || nextProxies.includes(selected)) &&
-    current.proxies.length === nextProxies.length &&
-    current.proxies.every((name, i) => name === nextProxies[i])
-  if (unchanged) return
-  const next = [...proxyGroups.value]
-  next[index] = {
-    ...current,
-    proxies: nextProxies,
-    'default-selected': selected && nextProxies.includes(selected) ? selected : undefined,
-  }
-  proxyGroups.value = next
+  // 一次赋值而不是逐个改：deep watch 会回调本函数，多写会连环触发 KV 回写
+  proxyGroups.value = groups
 }
 
-/** 启动清理：移除成员里已不存在的节点/组引用（“全部节点”组由 sync 托管，跳过） */
+/** 启动清理：移除成员里已不存在的节点/组引用（内置组的成员由 sync 托管，跳过） */
 export const pruneProxyGroupMembers = (validNames: Set<string>) => {
   proxyGroups.value = proxyGroups.value.map((group) => {
     if (isProtectedGroup(group.name)) return group

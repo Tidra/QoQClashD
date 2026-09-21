@@ -1,6 +1,8 @@
 import '@/api/http'
 import '@/helper/dayjs'
-import '@/store/sampleData'
+import { whenStorageReady } from '@/helper/storage'
+import '@/store/bootstrap'
+import { startSubscriptionAutoUpdate } from '@/store/subscriptions'
 import 'tippy.js/animations/scale.css'
 import 'tippy.js/dist/tippy.css'
 import { createApp } from 'vue'
@@ -10,8 +12,6 @@ import './assets/main.css'
 import { applyCustomCSS, applyCustomThemes, applyKsuTheme } from './helper'
 import { i18n } from './i18n'
 import router from './router'
-import { whenStorageReady } from '@/helper/storage'
-import { startSubscriptionAutoUpdate } from '@/store/subscriptions'
 
 const isEdge = /Edg\//.test(navigator.userAgent)
 

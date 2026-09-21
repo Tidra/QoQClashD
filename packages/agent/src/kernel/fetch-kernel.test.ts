@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
-import { mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -85,14 +86,91 @@ describe('fetchKernel', () => {
     const swapped = Buffer.from('trojanized-binary!!')
     let served = original
     const fakeFetch = vi.fn(async () => new Response(gzipSync(served), { status: 200 }))
-    const opts = { fetch: fakeFetch as unknown as typeof fetch }
+    const beforeWrite = vi.fn(async () => {})
+    const opts = { fetch: fakeFetch as unknown as typeof fetch, beforeWrite }
 
     await fetchKernel('linux', 'arm64', dest, opts)
     served = swapped
+    beforeWrite.mockClear()
 
     await expect(fetchKernel('linux', 'arm64', dest, opts)).rejects.toThrow(/SHA-256/)
     // 被替换的二进制绝不能覆盖已核对过的那份，也不给它 chmod 执行位的机会
     expect(readFileSync(join(dest, 'mihomo'))).toEqual(original)
+    // 校验不通过就不该惊动正在跑的内核（beforeWrite 的唯一用途是腾出文件锁）
+    expect(beforeWrite).not.toHaveBeenCalled()
+  })
+
+  it('beforeWrite 在覆盖二进制之前调用', async () => {
+    const dest = tmp()
+    const original = Buffer.from('running-binary')
+    const raw = join(dest, 'mihomo')
+    await writeFile(raw, original)
+    const beforeWrite = vi.fn(async () => {
+      // 钩子跑的时候旧二进制必须还在：Windows 上先停内核才谈得上覆盖
+      expect(readFileSync(raw)).toEqual(original)
+    })
+    const fakeFetch = vi.fn(
+      async () => new Response(gzipSync(Buffer.from('brand-new')), { status: 200 }),
+    )
+
+    await fetchKernel('linux', 'arm64', dest, {
+      fetch: fakeFetch as unknown as typeof fetch,
+      beforeWrite,
+    })
+    expect(beforeWrite).toHaveBeenCalledTimes(1)
+    expect(readFileSync(raw)).not.toEqual(original)
+  })
+
+  it('取消发生在收流途中：拒绝、不落盘、也不惊动 beforeWrite', async () => {
+    const dest = tmp()
+    const abort = new AbortController()
+    const beforeWrite = vi.fn(async () => {})
+    const fakeFetch = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Buffer.from('first-chunk'))
+          // 之后不再推进：这趟下载只能靠取消收场
+        },
+      })
+      return new Response(stream, { status: 200 })
+    })
+
+    const pending = fetchKernel('linux', 'arm64', dest, {
+      fetch: fakeFetch as unknown as typeof fetch,
+      signal: abort.signal,
+      // 第一块到手即取消：模拟用户点了「取消下载」
+      onProgress: () => abort.abort(),
+      beforeWrite,
+    })
+
+    await expect(pending).rejects.toThrow('下载已取消')
+    expect(beforeWrite).not.toHaveBeenCalled()
+    expect(existsSync(join(dest, 'mihomo'))).toBe(false)
+  })
+
+  it('取消发生在解包之后、落盘之前：保留原有二进制', async () => {
+    const dest = tmp()
+    const original = Buffer.from('running-binary')
+    await writeFile(join(dest, 'mihomo.exe'), original)
+    const abort = new AbortController()
+    const beforeWrite = vi.fn(async () => {})
+    const fakeFetch = vi.fn(
+      async () => new Response(Buffer.from('zip-archive-bytes'), { status: 200 }),
+    )
+
+    await expect(
+      fetchKernel('win32', 'amd64', dest, {
+        fetch: fakeFetch as unknown as typeof fetch,
+        signal: abort.signal,
+        unzipEntry: async () => {
+          abort.abort()
+          return Buffer.from('brand-new-exe')
+        },
+        beforeWrite,
+      }),
+    ).rejects.toThrow('下载已取消')
+    expect(beforeWrite).not.toHaveBeenCalled()
+    expect(readFileSync(join(dest, 'mihomo.exe'))).toEqual(original)
   })
 
   it('windows: unzips and extracts mihomo.exe via injected unzipEntry', async () => {
@@ -164,6 +242,56 @@ describe('fetchKernel', () => {
       fetch: fakeFetch as unknown as typeof fetch,
     })
     expect(requested[0]).toContain(`/download/${MIHOMO_VERSION}/`)
+  })
+
+  it('onProgress 逐块上报累计字节与 Content-Length 总量', async () => {
+    const dest = tmp()
+    // 分块必须能重组成合法 gzip：fetchKernel 收到完整字节后会 gunzip。
+    const body = gzipSync(Buffer.from('streamed-binary'))
+    const chunks = [body.subarray(0, 4), body.subarray(4, 9), body.subarray(9)]
+    const fakeFetch = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk)
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-length': String(body.length) },
+      })
+    })
+    const progress: [number, number][] = []
+    const { binPath } = await fetchKernel('linux', 'arm64', dest, {
+      fetch: fakeFetch as unknown as typeof fetch,
+      onProgress: (downloaded, total) => progress.push([downloaded, total]),
+    })
+    expect(readFileSync(binPath)).toEqual(Buffer.from('streamed-binary'))
+    expect(progress).toEqual([
+      [4, body.length],
+      [9, body.length],
+      [body.length, body.length],
+    ])
+  })
+
+  it('服务端不给 Content-Length 时 total 报 0，累计字节仍然上报', async () => {
+    const dest = tmp()
+    const body = gzipSync(Buffer.from('no-length-binary'))
+    const fakeFetch = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body)
+          controller.close()
+        },
+      })
+      return new Response(stream, { status: 200 })
+    })
+    const progress: [number, number][] = []
+    await fetchKernel('linux', 'arm64', dest, {
+      fetch: fakeFetch as unknown as typeof fetch,
+      onProgress: (downloaded, total) => progress.push([downloaded, total]),
+    })
+    expect(progress).toEqual([[body.length, 0]])
   })
 })
 

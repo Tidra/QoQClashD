@@ -6,6 +6,7 @@ import { composeConfigYaml } from '@/helper/composeConfig'
 import { showNotification } from '@/helper/notification'
 import { notifyRequestError } from '@/helper/requestError'
 import { useStorage } from '@/helper/storage'
+import { buildMergedNodeList } from '@/store/nodePool'
 import { computed, ref } from 'vue'
 
 const PANEL_PROFILE_NAME = '面板配置'
@@ -66,6 +67,12 @@ let applyAgainRequested = false
 export const applyDraftConfig = async () => {
   if (applyingConfig.value) {
     applyAgainRequested = true
+    return
+  }
+  // 没有节点时组合出来的配置必然带着指向空组的规则，内核加载即失败；
+  // 与其下发一份注定报错的 YAML，不如把话说明白。
+  if (!buildMergedNodeList().length) {
+    showNotification({ content: 'applyConfigNoNodes', type: 'alert-warning' })
     return
   }
   applyingConfig.value = true

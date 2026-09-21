@@ -27,7 +27,9 @@
           >
             <WrenchScrewdriverIcon class="h-4 w-4" />
           </button>
+          <!-- 规则集合只有表格，摆一个切换按钮就是骗人点一下没反应。 -->
           <button
+            v-if="tab !== 'ruleSets'"
             type="button"
             class="btn btn-circle btn-sm"
             :title="viewMode === 'card' ? $t('tableMode') : $t('cardMode')"
@@ -627,75 +629,7 @@
             <PlusIcon class="h-4 w-4" /> {{ $t('ruleProviderAdd') }}
           </button>
         </div>
-        <div
-          v-else-if="viewMode === 'card'"
-          class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2"
-        >
-          <div
-            v-for="provider in filteredProviders"
-            :key="provider.name"
-            class="bg-base-200 hover:bg-base-300/50 flex min-w-0 cursor-pointer flex-col gap-2 overflow-hidden rounded-md p-2 transition-colors hover:shadow-sm"
-            @click="openEditProvider(provider)"
-          >
-            <div class="flex w-full min-w-0 items-start justify-between gap-2">
-              <div class="min-w-0">
-                <div class="flex min-w-0 items-center gap-1">
-                  <span class="min-w-0 truncate font-medium">{{ provider.name }}</span>
-                  <span class="badge badge-info shrink-0 text-[10px]">{{ provider.type }}</span>
-                  <span class="badge badge-ghost shrink-0 text-[10px]">{{ provider.format }}</span>
-                  <span
-                    v-if="provider.behavior"
-                    class="badge badge-ghost shrink-0 text-[10px]"
-                    >{{ provider.behavior }}</span
-                  >
-                </div>
-                <div
-                  class="text-base-content/60 mt-1 truncate font-mono text-xs"
-                  :title="provider.url || provider.path || ''"
-                >
-                  {{ provider.url || provider.path || '—' }}
-                </div>
-                <div class="text-base-content/60 mt-1 truncate text-xs">
-                  <template v-if="provider.type === 'http'">
-                    {{ $t('ruleProviderInterval') }}: {{ provider.interval ?? '—' }}s<template
-                      v-if="provider.proxy"
-                    >
-                      · {{ provider.proxy }}</template
-                    >
-                  </template>
-                  <template v-else-if="provider.type === 'inline'"
-                    >{{ (provider.payload ?? []).length }} {{ $t('ruleCount') }}</template
-                  >
-                  <template v-else>{{ provider.path || '—' }}</template>
-                  ·
-                  {{
-                    $t('ruleProviderReferenced', {
-                      count: ruleProviderReferenceCount(provider.name),
-                    })
-                  }}
-                </div>
-              </div>
-              <div class="relative z-10 flex shrink-0 gap-0.5">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
-                  :title="$t('edit')"
-                  @click.stop="openEditProvider(provider)"
-                >
-                  <PencilIcon class="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
-                  :title="$t('delete')"
-                  @click.stop="confirmDeleteProvider(provider)"
-                >
-                  <TrashIcon class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 规则集合只有表格：卡片模式下每条集合就是一行元数据，摆成卡片反而看不全 url。 -->
         <div
           v-else
           class="table-glass min-h-full min-w-min pb-6"
@@ -818,7 +752,10 @@
       >
         <div class="flex flex-col gap-3 text-sm">
           <div class="settings-grid">
-            <div class="setting-item">
+            <div
+              v-if="tab !== 'ruleSets'"
+              class="setting-item"
+            >
               <div class="setting-item-label shrink-0!">{{ $t('displayStyle') }}</div>
               <SelectInput
                 v-model="viewMode"
@@ -1010,7 +947,22 @@ const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 const tab = useStorage<RoutingTab>('config/routing-tab', 'inbounds')
 // 旧版 'subrules' 独立 tab 与逐条规则表格已并入统一规则列表
 if ((tab.value as string) === 'subrules') tab.value = 'rules'
-const viewMode = useStorage<'card' | 'table'>('routingViewMode', 'card')
+// 卡片/表格模式按 tab 各自记，切一个不该带着另一个。旧的全局键 'routingViewMode'
+// 由「主规则」tab 继承，免得在 KV 里留一个没人读的孤儿键；「规则集合」只有表格，不参与。
+const rulesViewMode = useStorage<'card' | 'table'>('routingViewMode', 'card')
+const inboundsViewMode = useStorage<'card' | 'table'>('routingViewMode-inbounds', 'card')
+const viewMode = computed<'card' | 'table'>({
+  get: () =>
+    tab.value === 'inbounds'
+      ? inboundsViewMode.value
+      : tab.value === 'rules'
+        ? rulesViewMode.value
+        : 'table',
+  set: (value) => {
+    if (tab.value === 'inbounds') inboundsViewMode.value = value
+    else if (tab.value === 'rules') rulesViewMode.value = value
+  },
+})
 const search = ref('')
 const displaySettingsOpen = ref(false)
 

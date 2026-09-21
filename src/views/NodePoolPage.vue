@@ -293,7 +293,10 @@
                       class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
                     >
                       <BoltIcon class="h-10 w-10 opacity-60" />
-                      <div class="text-base">{{ $t('nodePoolEmpty') }}</div>
+                      <!-- filteredNodes 空可能是筛选空了，不一定是真没有节点。 -->
+                      <div class="text-base">
+                        {{ allNodes.length ? $t('noData') : $t('nodePoolEmpty') }}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -463,7 +466,7 @@
                 >
                   <BoltIcon class="h-3.5 w-3.5" />
                 </button>
-                <!-- 内置「全部节点」组不可编辑/删除，直接隐藏图标 -->
+                <!-- 内置组（全部节点）成员由节点列表托管，不可编辑/删除，直接隐藏图标 -->
                 <button
                   v-if="!isProtectedGroup(group.name)"
                   type="button"
@@ -607,6 +610,42 @@
                 >
                   {{ $t('proxyGroupEditorCurrentSelected') }}
                 </th>
+                <th
+                  v-if="groupTableColumns.includes('url')"
+                  class="min-w-32"
+                >
+                  {{ $t('proxyGroupEditorUrl') }}
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('interval')"
+                  class="w-24 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorInterval') }} (s)
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('timeout')"
+                  class="w-24 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorTimeout') }} (ms)
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('tolerance')"
+                  class="w-20 whitespace-nowrap"
+                >
+                  {{ $t('proxyGroupEditorTolerance') }} (ms)
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('filter')"
+                  class="min-w-28"
+                >
+                  {{ $t('proxyGroupEditorFilter') }}
+                </th>
+                <th
+                  v-if="groupTableColumns.includes('excludeFilter')"
+                  class="min-w-28"
+                >
+                  {{ $t('proxyGroupEditorExcludeFilter') }}
+                </th>
                 <th class="bg-base-100 sticky right-0 z-40 w-24 text-right whitespace-nowrap">
                   {{ $t('actions') }}
                 </th>
@@ -666,6 +705,45 @@
                     class="text-base-content/40"
                     >—</span
                   >
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('url')"
+                  class="max-w-52 truncate"
+                  :title="group.url"
+                >
+                  {{ groupCellValue(group.url) }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('interval')"
+                  class="whitespace-nowrap"
+                >
+                  {{ groupCellValue(group.interval) }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('timeout')"
+                  class="whitespace-nowrap"
+                >
+                  {{ groupCellValue(group.timeout) }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('tolerance')"
+                  class="whitespace-nowrap"
+                >
+                  {{ groupCellValue(group.tolerance) }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('filter')"
+                  class="max-w-32 truncate"
+                  :title="group.filter"
+                >
+                  {{ groupCellValue(group.filter) }}
+                </td>
+                <td
+                  v-if="groupTableColumns.includes('excludeFilter')"
+                  class="max-w-32 truncate"
+                  :title="group['exclude-filter']"
+                >
+                  {{ groupCellValue(group['exclude-filter']) }}
                 </td>
                 <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
                   <button
@@ -1160,7 +1238,12 @@ import TextInput from '@/components/common/TextInput.vue'
 import ProxyGroupEditor from '@/components/proxies/ProxyGroupEditor.vue'
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useStorage } from '@vueuse/core'
+import {
+  groupTableColumns,
+  groupViewMode,
+  nodeTableColumns,
+  nodeViewMode,
+} from '@/store/nodePoolDisplay'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import {
   isProtectedGroup,
@@ -1370,6 +1453,12 @@ const selectGroupMember = (group: ProxyGroupDraft, member: string) => {
 // 表格成员数/当前选择下拉：筛选条件展开后与显式成员合并计数
 const groupMemberTotal = (group: ProxyGroupDraft) =>
   resolveGroupMembers(group, [...nodeNameSet.value]).length
+/**
+ * 可选字段的单元格：没配过就是破折号。健康检查组那几项（测速地址/间隔/超时）由编辑器
+ * 在保存时按类型补齐或置空，所以这里不用再判类型。
+ */
+const groupCellValue = (value: string | number | undefined) =>
+  value === undefined || value === '' ? '—' : String(value)
 const selectedMemberOptions = (group: ProxyGroupDraft) => [
   { value: '', label: '--' },
   ...resolveGroupMembers(group, [...nodeNameSet.value]).map((name) => ({
@@ -1420,20 +1509,10 @@ const groupMemberOptions = computed<ProxyGroupMemberOption[]>(() => {
   }
   return options
 })
-const nodeViewMode = useStorage<'card' | 'table'>('nodeViewMode', 'card')
 const nodeSearch = ref('')
 const allNodes = computed(() => buildMergedNodeList())
-const groupViewMode = useStorage<'card' | 'table'>('groupViewMode', 'card')
 const nodeDisplaySettingsOpen = ref(false)
 const groupDisplaySettingsOpen = ref(false)
-const nodeTableColumns = useStorage<string[]>('nodeTableColumns', [
-  'type',
-  'server',
-  'port',
-  'cipher',
-  'sni',
-  'latency',
-])
 const nodeTableColumnOptions = [
   { key: 'type', label: t('nodeType') },
   { key: 'server', label: t('nodeServer') },
@@ -1450,15 +1529,16 @@ const {
   remove: removeNodeColumn,
 } = useColumnPicker(nodeTableColumns, nodeTableColumnOptions)
 
-const groupTableColumns = useStorage<string[]>('groupTableColumns', [
-  'type',
-  'members',
-  'currentSelected',
-])
 const groupTableColumnOptions = [
   { key: 'type', label: t('proxyGroupEditorGroupType') },
   { key: 'members', label: t('proxyGroupEditorMembers') },
   { key: 'currentSelected', label: t('proxyGroupEditorCurrentSelected') },
+  { key: 'url', label: t('proxyGroupEditorUrl') },
+  { key: 'interval', label: t('proxyGroupEditorInterval') },
+  { key: 'timeout', label: t('proxyGroupEditorTimeout') },
+  { key: 'tolerance', label: t('proxyGroupEditorTolerance') },
+  { key: 'filter', label: t('proxyGroupEditorFilter') },
+  { key: 'excludeFilter', label: t('proxyGroupEditorExcludeFilter') },
 ]
 const {
   available: restOfGroupColumns,

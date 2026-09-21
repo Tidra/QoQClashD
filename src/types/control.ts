@@ -21,6 +21,20 @@ export interface KernelState {
 
 export type ProfileType = 'local' | 'remote' | 'merge' | 'script'
 
+/** 与 agent types.ts 的 KernelDownloadProgress 对齐：/kernel/ensure/status 的响应体。 */
+export interface KernelDownloadProgress {
+  phase: 'downloading' | 'starting' | 'done' | 'failed' | 'cancelled'
+  downloaded: number
+  total: number
+  version: string
+  error?: string
+}
+
+// 没有在途下载时也要回一个对象体：裸 null 会被 agent 侧的 h3 变成 204 空响应。
+export interface KernelDownloadStatus {
+  progress: KernelDownloadProgress | null
+}
+
 export interface ProfileSubscriptionInfo {
   upload: number
   download: number

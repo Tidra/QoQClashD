@@ -7,6 +7,7 @@
 import { startKernelSession } from '@/assembly/session'
 import { useControlApi } from '@/composables/useControlApi'
 import { ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
+import { kernelDownloading } from '@/helper/kernelDownload'
 import { getAuthStatus } from '@/helper/panelSession'
 import { whenStorageReady } from '@/helper/storage'
 import router from '@/router'
@@ -70,8 +71,14 @@ export const KERNEL_SETTINGS_ROUTE = {
   query: { section: SETTINGS_MENU_KEY.backend },
 }
 
-/** 内核不在跑就去内核设置页，而不是弹一层「请启动内核」的窗。运行控制按钮就在那一屏。 */
-export const gotoKernelSettings = () => {
+/**
+ * 内核不在跑就去内核设置页，而不是弹一层「请启动内核」的窗。运行控制按钮就在那一屏。
+ *
+ * 升级窗口期不跳：agent 写二进制前会先把内核停掉（Windows 锁着镜像文件），这几分钟
+ * 状态恒为非 running。用户正站在自己要看的地方点下载，把他弹走等于打断自己的操作。
+ */
+const gotoKernelSettings = () => {
+  if (kernelDownloading.value) return
   router.replace(KERNEL_SETTINGS_ROUTE)
 }
 

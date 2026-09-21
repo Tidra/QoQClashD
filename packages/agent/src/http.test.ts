@@ -13,7 +13,7 @@ import { SubscriptionFetchError } from './profiles'
 import type { PanelAuth } from './session'
 import { createSessionManager } from './session'
 import { TunPreconditionError } from './tun'
-import type { KernelState, ProfileMeta } from './types'
+import type { KernelDownloadProgress, KernelState, ProfileMeta } from './types'
 
 function fakeState(over: Partial<KernelState> = {}): KernelState {
   return {
@@ -964,6 +964,76 @@ describe('createControlRouter — kernel version management', () => {
     })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: 'kernel-version unavailable' })
+  })
+})
+
+describe('createControlRouter — kernel download progress', () => {
+  let srv: Awaited<ReturnType<typeof mount>>
+  afterEach(async () => srv?.close())
+
+  it('GET /api/control/kernel/ensure/status returns the in-flight snapshot', async () => {
+    const snapshot: KernelDownloadProgress = {
+      phase: 'downloading',
+      downloaded: 1024,
+      total: 4096,
+      version: 'v1.19.27',
+    }
+    srv = await mount(makeDeps(), { kernelDownloadStatus: () => snapshot })
+    const res = await fetch(`${srv.base}/api/control/kernel/ensure/status`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ progress: snapshot })
+  })
+
+  it('没有在途下载时回 { progress: null }，不能是 204 空体', async () => {
+    srv = await mount(makeDeps(), { kernelDownloadStatus: () => null })
+    const res = await fetch(`${srv.base}/api/control/kernel/ensure/status`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ progress: null })
+    await srv.close()
+
+    srv = await mount(makeDeps())
+    const bare = await fetch(`${srv.base}/api/control/kernel/ensure/status`)
+    expect(bare.status).toBe(200)
+    expect(await bare.json()).toEqual({ progress: null })
+  })
+
+  it('受 Bearer 保护：设置了 token 时匿名请求 401', async () => {
+    srv = await mount(makeDeps('tok'), { kernelDownloadStatus: () => null })
+    const res = await fetch(`${srv.base}/api/control/kernel/ensure/status`)
+    expect(res.status).toBe(401)
+  })
+
+  it('pOST /kernel/ensure/cancel 转达取消结果；没有注入依赖时回 ok:false', async () => {
+    const cancelKernelDownload = vi.fn(() => true)
+    srv = await mount(makeDeps(), { cancelKernelDownload })
+    const res = await fetch(`${srv.base}/api/control/kernel/ensure/cancel`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(cancelKernelDownload).toHaveBeenCalledOnce()
+    await srv.close()
+
+    srv = await mount(makeDeps())
+    const bare = await fetch(`${srv.base}/api/control/kernel/ensure/cancel`, { method: 'POST' })
+    expect(bare.status).toBe(200)
+    expect(await bare.json()).toEqual({ ok: false })
+  })
+
+  it('pOST /kernel/ensure 把下载异常折进 ok:false，而不是抛成 500', async () => {
+    srv = await mount(makeDeps(), {
+      ensureKernel: async () => {
+        throw new Error('fetchKernel: download failed ECONNRESET')
+      },
+    })
+    const res = await fetch(`${srv.base}/api/control/kernel/ensure`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mirror: 'direct' }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: 'fetchKernel: download failed ECONNRESET',
+    })
   })
 })
 
