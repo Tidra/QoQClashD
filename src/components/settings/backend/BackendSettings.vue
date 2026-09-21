@@ -373,7 +373,7 @@
 </template>
 
 <script setup lang="ts">
-import { startKernelSession, stopKernelSession } from '@/assembly/session'
+import { stopKernelSession } from '@/assembly/session'
 import { isCoreUpdateAvailable } from '@/assembly/version'
 import SelectInput from '@/components/common/SelectInput.vue'
 import type { SelectOption } from '@/components/common/SelectInput.vue'
@@ -383,9 +383,9 @@ import { backendActions } from '@/composables/backendActions'
 import { useControlApi } from '@/composables/useControlApi'
 import { isSettingVisible, useIsSettingVisible } from '@/composables/settings'
 import {
+  restartKernelAndReconnect,
   restartKernelForSecret,
   startKernelAndReconnect,
-  waitKernelRunning,
 } from '@/composables/useKernelBackend'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
 import { applyDraftConfig, applyingConfig, pendingConfigChanges } from '@/helper/applyConfig'
@@ -534,10 +534,8 @@ const applyKernelApi = async (body: { port: number }, savedKey: string): Promise
     kernelApiBaselinePort.value = port
     kernelApiPortInput.value = port
     showNotification({ content: savedKey, type: 'alert-success' })
-    if (result.requiresRestart) {
-      await controlApi.restartKernel()
-      if (await waitKernelRunning()) startKernelSession()
-      else showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
+    if (result.requiresRestart && !(await restartKernelAndReconnect())) {
+      showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
     }
     return true
   } catch (error) {
@@ -713,14 +711,10 @@ const runKernelLifecycle = async (action: () => Promise<unknown>) => {
 // 起来后不等用户手动刷新：等到 running 就立刻重建会话接上。
 const startOrRestartKernelAction = () =>
   runKernelLifecycle(async () => {
-    let reconnected: boolean
-    if (kernelState.value.status === 'running') {
-      await controlApi.restartKernel()
-      reconnected = await waitKernelRunning()
-      if (reconnected) startKernelSession()
-    } else {
-      reconnected = await startKernelAndReconnect()
-    }
+    const reconnected =
+      kernelState.value.status === 'running'
+        ? await restartKernelAndReconnect()
+        : await startKernelAndReconnect()
     if (!reconnected) {
       showNotification({ content: 'kernelStartFailed', type: 'alert-error' })
     }
@@ -734,11 +728,13 @@ const stopKernelAction = () =>
   })
 
 onMounted(async () => {
-  await loadRuntimeInfo()
-  refreshKernelState()
   // 内核状态不只会被本页的操作改变（连接失败弹窗里也能启动），轮询到 running/stopped
   // 变化才能让本页的徽章、按钮语义跟真实状态对上，而不是停在挂载那一刻的快照。
+  // 定时器必须在第一个 await 之前注册：onBeforeUnmount 只会跑一次，加载中就切走
+  // 的话，await 之后再 setInterval 将永远没人清理。
   kernelPollTimer = setInterval(refreshKernelState, 5000)
+  await loadRuntimeInfo()
+  refreshKernelState()
   try {
     const info = await controlApi.getInfo()
     pinnedVersion.value = info.kernel?.version ?? ''

@@ -47,6 +47,15 @@ export const pruneProxyGroupMembers = (validNames: Set<string>) => {
   })
 }
 
+/** 归一化组类型为 mihomo 认的写法：兼容 select/selector、urltest/url-test 等别名 */
+export const normalizeGroupType = (type: string) => {
+  const value = type.toLowerCase()
+  if (value === 'selector' || value === 'select') return 'select'
+  if (value === 'urltest' || value === 'url-test') return 'url-test'
+  if (value === 'loadbalance' || value === 'load-balance') return 'load-balance'
+  return value
+}
+
 /** 兼容 mihomo 的 (?i) 内联忽略大小写标记；非法正则回退为子串匹配 */
 export const matchesFilterPattern = (pattern: string, name: string) => {
   const cleaned = pattern.replace(/\(\?i\)/g, '')
@@ -103,8 +112,7 @@ export const renameProxyGroupMember = (oldName: string, newName: string) => {
   proxyGroups.value = proxyGroups.value.map((group) => ({
     ...group,
     proxies: group.proxies.map((member) => (member === oldName ? newName : member)),
-    'default-selected':
-      group['default-selected'] === oldName ? newName : group['default-selected'],
+    'default-selected': group['default-selected'] === oldName ? newName : group['default-selected'],
   }))
 }
 

@@ -260,19 +260,10 @@ import { PROXY_TYPE, TEST_URL } from '@/constant'
 import { speedtestUrl } from '@/store/settings'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { showNotification } from '@/helper/notification'
-import { matchesFilterPattern } from '@/store/proxyGroups'
+import { matchesFilterPattern, normalizeGroupType } from '@/store/proxyGroups'
 
 // 表单留空时回落的默认值；灰字 placeholder 展示的就是它们。
 const GROUP_DEFAULTS = { interval: 3600, timeout: 5000 }
-
-const normalizeGroupType = (type?: string) => {
-  const value = (type ?? PROXY_TYPE.Selector).toLowerCase()
-  if (value === 'selector' || value === 'select') return 'select'
-  if (value === 'urltest' || value === 'url-test') return 'url-test'
-  if (value === 'loadbalance' || value === 'load-balance') return 'load-balance'
-  if (value === 'fallback') return 'fallback'
-  return value
-}
 
 const props = defineProps<{
   modelValue: boolean
@@ -299,7 +290,7 @@ const toNum = (v: number | '' | undefined) =>
 
 const createGroupForm = (initial?: ProxyGroupDraft & { 'min-count'?: number }) => ({
   name: initial?.name ?? '',
-  type: normalizeGroupType(initial?.type),
+  type: normalizeGroupType(initial?.type ?? PROXY_TYPE.Selector),
   // 与默认值相同的存量值直接清空，让灰字 placeholder 顶上
   url: initial?.url && initial.url !== urlDefault.value ? initial.url : '',
   interval: initial?.interval === GROUP_DEFAULTS.interval ? undefined : initial?.interval,

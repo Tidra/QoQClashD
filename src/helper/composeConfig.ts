@@ -2,7 +2,12 @@
 // mihomo config.yaml，不依赖内核运行，用于「查看当前 YAML 配置」。
 import type { CustomNode } from '@/store/nodePool'
 import { buildMergedNodeList } from '@/store/nodePool'
-import { ALL_NODES_GROUP_NAME, proxyGroups, resolveGroupMembers } from '@/store/proxyGroups'
+import {
+  ALL_NODES_GROUP_NAME,
+  normalizeGroupType,
+  proxyGroups,
+  resolveGroupMembers,
+} from '@/store/proxyGroups'
 import type { InboundDraft, RuleProviderDraft, TunSettings } from '@/store/routing'
 import {
   routingInbounds,
@@ -61,15 +66,6 @@ const nodeToProxy = (node: CustomNode): Record<string, unknown> => {
     proxy['grpc-opts'] = { 'grpc-service-name': node.grpcServiceName }
   }
   return proxy
-}
-
-const normalizeGroupType = (type: string) => {
-  const value = type.toLowerCase()
-  if (value === 'selector' || value === 'select') return 'select'
-  if (value === 'urltest' || value === 'url-test') return 'url-test'
-  if (value === 'loadbalance' || value === 'load-balance') return 'load-balance'
-  if (value === 'fallback') return 'fallback'
-  return value
 }
 
 const groupToEntry = (group: ProxyGroupDraft, nodeNames: string[]): Record<string, unknown> => {

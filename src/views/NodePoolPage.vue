@@ -1124,6 +1124,7 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{ view?: 'groups' | 'nodes' }>(), { view: 'groups' })
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { confirmDanger } from '@/helper/confirmDialog'
 import { showNotification } from '@/helper/notification'
 import {
   addNode,
@@ -1136,6 +1137,7 @@ import {
 } from '@/store/nodePool'
 import type { CustomNode, NodePool } from '@/store/nodePool'
 import { getColorForLatency } from '@/helper'
+import { useColumnPicker } from '@/composables/useColumnPicker'
 import { useLatency } from '@/composables/useLatency'
 import {
   Bars2Icon,
@@ -1162,6 +1164,7 @@ import { useStorage } from '@vueuse/core'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import {
   isProtectedGroup,
+  normalizeGroupType,
   proxyGroups,
   removeProxyGroup,
   resolveGroupMembers,
@@ -1265,31 +1268,19 @@ const closeGroupEditor = () => {
   editingGroup.value = null
 }
 
-const normalizeGroupTypeForConfig = (type: string) => {
-  const value = type.toLowerCase()
-  if (value === 'selector' || value === 'select') return 'select'
-  if (value === 'urltest' || value === 'url-test') return 'url-test'
-  if (value === 'loadbalance' || value === 'load-balance') return 'load-balance'
-  return value
-}
-
 const saveRealGroup = async (payload: ProxyGroupDraft) => {
   const originalName = editingGroup.value?.name
-  upsertProxyGroup({ ...payload, type: normalizeGroupTypeForConfig(payload.type) }, originalName)
+  upsertProxyGroup({ ...payload, type: normalizeGroupType(payload.type) }, originalName)
   closeGroupEditor()
   showNotification({ content: t('proxyGroupEditorApplied'), type: 'alert-success' })
 }
 
 const deleteRealGroup = async (g: ProxyGroupDraft) => {
   if (isProtectedGroup(g.name)) return
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('proxyGroupEditorDeleteConfirm', { name: g.name }),
-    confirmButtonClass: 'btn-error',
+  await confirmDanger(t('proxyGroupEditorDeleteConfirm', { name: g.name }), () => {
+    removeProxyGroup(g.name)
+    showNotification({ content: t('proxyGroupEditorDeleteApplied'), type: 'alert-success' })
   })
-  if (!result.confirmed) return
-  removeProxyGroup(g.name)
-  showNotification({ content: t('proxyGroupEditorDeleteApplied'), type: 'alert-success' })
 }
 
 // 过滤后的真实代理组(供 groups 视图渲染)
@@ -1343,17 +1334,13 @@ onUnmounted(() => {
 
 // 分组类型标签
 const groupTypeLabel = (type: string) => {
-  const normalized = type.toLowerCase()
-  switch (normalized) {
-    case 'selector':
+  switch (normalizeGroupType(type)) {
     case 'select':
       return t('proxyGroupEditorGroupTypeSelect')
-    case 'urltest':
     case 'url-test':
       return t('proxyGroupEditorGroupTypeUrlTest')
     case 'fallback':
       return t('proxyGroupEditorGroupTypeFallback')
-    case 'loadbalance':
     case 'load-balance':
       return t('proxyGroupEditorGroupTypeLoadBalance')
     default:
@@ -1368,8 +1355,7 @@ const memberKind = (name: string): 'node' | 'group' | 'missing' => {
   return 'missing'
 }
 const nodeNameSet = computed(() => new Set(allNodes.value.map((node) => node.name)))
-const isSelectableGroup = (group: ProxyGroupDraft) =>
-  normalizeGroupTypeForConfig(group.type) === 'select'
+const isSelectableGroup = (group: ProxyGroupDraft) => normalizeGroupType(group.type) === 'select'
 const selectGroupMember = (group: ProxyGroupDraft, member: string) => {
   if (!isSelectableGroup(group) || memberKind(member) === 'missing') return
   const next = group['default-selected'] === member ? undefined : member
@@ -1457,6 +1443,13 @@ const nodeTableColumnOptions = [
   { key: 'latency', label: t('nodeLatency') },
 ]
 
+const {
+  available: restOfNodeColumns,
+  labelOf: getNodeColumnLabel,
+  add: addNodeColumn,
+  remove: removeNodeColumn,
+} = useColumnPicker(nodeTableColumns, nodeTableColumnOptions)
+
 const groupTableColumns = useStorage<string[]>('groupTableColumns', [
   'type',
   'members',
@@ -1467,48 +1460,12 @@ const groupTableColumnOptions = [
   { key: 'members', label: t('proxyGroupEditorMembers') },
   { key: 'currentSelected', label: t('proxyGroupEditorCurrentSelected') },
 ]
-const restOfGroupColumns = computed({
-  get: () =>
-    groupTableColumnOptions
-      .filter((opt) => !groupTableColumns.value.includes(opt.key))
-      .map((opt) => opt.key),
-  set: () => {},
-})
-const getGroupColumnLabel = (key: string) =>
-  groupTableColumnOptions.find((opt) => opt.key === key)?.label || key
-const removeGroupColumn = (key: string) => {
-  groupTableColumns.value = groupTableColumns.value.filter((col) => col !== key)
-}
-const addGroupColumn = (key: string) => {
-  if (!groupTableColumns.value.includes(key)) {
-    groupTableColumns.value = [...groupTableColumns.value, key]
-  }
-}
-
-const restOfNodeColumns = computed({
-  get() {
-    return nodeTableColumnOptions
-      .filter((opt) => !nodeTableColumns.value.includes(opt.key))
-      .map((opt) => opt.key)
-  },
-  set() {
-    // Draggable set is not strictly needed if we only drag from/to, but we define it to avoid warnings
-  },
-})
-
-const getNodeColumnLabel = (key: string) => {
-  return nodeTableColumnOptions.find((opt) => opt.key === key)?.label || key
-}
-
-const removeNodeColumn = (key: string) => {
-  nodeTableColumns.value = nodeTableColumns.value.filter((col) => col !== key)
-}
-
-const addNodeColumn = (key: string) => {
-  if (!nodeTableColumns.value.includes(key)) {
-    nodeTableColumns.value = [...nodeTableColumns.value, key]
-  }
-}
+const {
+  available: restOfGroupColumns,
+  labelOf: getGroupColumnLabel,
+  add: addGroupColumn,
+  remove: removeGroupColumn,
+} = useColumnPicker(groupTableColumns, groupTableColumnOptions)
 const filteredNodes = computed(() => {
   const keyword = nodeSearch.value.trim().toLowerCase()
   if (!keyword) return allNodes.value
@@ -1541,23 +1498,19 @@ const toggleSelectAllFiltered = () => {
 const bulkDeleteSelectedNodes = async () => {
   const count = selectedNodeIds.value.size
   if (!count) return
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('nodeBulkDeleteConfirm', { count: String(count) }),
-    confirmButtonClass: 'btn-error',
-  })
-  if (!result.confirmed) return
-  for (const pool of pools.value) {
-    const nodeIds = pool.nodes
-      .filter((node) => selectedNodeIds.value.has(node.id))
-      .map((node) => node.id)
-    if (nodeIds.length) removeNodes(pool.id, nodeIds)
-  }
-  selectedNodeIds.value = new Set()
-  showNotification({
-    content: 'nodesDeleteSuccess',
-    params: { count: String(count) },
-    type: 'alert-success',
+  await confirmDanger(t('nodeBulkDeleteConfirm', { count: String(count) }), () => {
+    for (const pool of pools.value) {
+      const nodeIds = pool.nodes
+        .filter((node) => selectedNodeIds.value.has(node.id))
+        .map((node) => node.id)
+      if (nodeIds.length) removeNodes(pool.id, nodeIds)
+    }
+    selectedNodeIds.value = new Set()
+    showNotification({
+      content: 'nodesDeleteSuccess',
+      params: { count: String(count) },
+      type: 'alert-success',
+    })
   })
 }
 
@@ -1763,20 +1716,14 @@ const saveNode = () => {
   closeNodeDialog()
 }
 
-const removeNodeById = async (poolId: string, nodeId: string) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('nodeDeleteConfirm'),
-    confirmButtonClass: 'btn-error',
-  })
-  if (result.confirmed) {
+const removeNodeById = (poolId: string, nodeId: string) =>
+  confirmDanger(t('nodeDeleteConfirm'), () => {
     removeNode(poolId, nodeId)
     const next = new Set(selectedNodeIds.value)
     next.delete(nodeId)
     selectedNodeIds.value = next
     showNotification({ content: 'nodeDeleteSuccess', type: 'alert-success' })
-  }
-}
+  })
 
 // ── 延迟测试 ─────────────────────────────────────────────────────
 const testNode = async (nodeName: string) => {

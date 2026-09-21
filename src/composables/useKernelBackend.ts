@@ -2,8 +2,8 @@
 //
 // 面板只对着 agent 托管的那一个内核工作，所以这里不再有「登记后端」这一步 ——
 // 内核 running 就是唯一事实，接上它只要重开会话。
-// startKernelAndReconnect 是「启动内核并接上」的单一实现：设置页运行控制与登录后
-// 引导都走同一条路 —— 启动 → 等 running → 重开会话。
+// start/restartKernelAndReconnect 是「拉起内核并接上」的单一实现：设置页的运行控制按钮与
+// Clash API 端口下发都走同一条路 —— 启动/重启 → 等 running → 重开会话。
 import { startKernelSession } from '@/assembly/session'
 import { useControlApi } from '@/composables/useControlApi'
 import { ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
@@ -23,9 +23,9 @@ export const getKernelStatusSafe = async () => {
 }
 
 /** 轮询 agent 的内核状态直到 running；超时返回 false。 */
-export const waitKernelRunning = async (timeoutMs = KERNEL_WAIT_TIMEOUT) => {
+const waitKernelRunning = async () => {
   const controlApi = useControlApi()
-  const deadline = Date.now() + timeoutMs
+  const deadline = Date.now() + KERNEL_WAIT_TIMEOUT
   for (;;) {
     try {
       const state = await controlApi.getKernelStatus()
@@ -38,13 +38,18 @@ export const waitKernelRunning = async (timeoutMs = KERNEL_WAIT_TIMEOUT) => {
   }
 }
 
-/** 启动内核 → 等 running → 重开会话；没在超时内起来返回 false 交给调用方提示。 */
-export const startKernelAndReconnect = async () => {
-  await useControlApi().startKernel()
+/** 拉起内核（启动或重启）→ 等 running → 重开会话；没在超时内起来返回 false 交给调用方提示。 */
+const bringKernelBackUp = async (command: () => Promise<unknown>) => {
+  await command()
   if (!(await waitKernelRunning())) return false
   startKernelSession()
   return true
 }
+
+export const startKernelAndReconnect = () => bringKernelBackUp(() => useControlApi().startKernel())
+
+export const restartKernelAndReconnect = () =>
+  bringKernelBackUp(() => useControlApi().restartKernel())
 
 /**
  * 共用密码改过、且内核当时在跑，就得重启一次。
@@ -54,8 +59,7 @@ export const startKernelAndReconnect = async () => {
  */
 export const restartKernelForSecret = async () => {
   try {
-    await useControlApi().restartKernel()
-    await waitKernelRunning()
+    await restartKernelAndReconnect()
   } catch {
     // 重启失败交给会话自己的断连表现，不拦登录/改密流程
   }

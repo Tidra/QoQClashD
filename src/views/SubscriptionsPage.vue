@@ -252,6 +252,7 @@
 
 <script setup lang="ts">
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { confirmDanger } from '@/helper/confirmDialog'
 import { showNotification } from '@/helper/notification'
 import {
   addSubscription,
@@ -377,15 +378,8 @@ const saveSubscription = () => {
   dialogOpen.value = false
 }
 
-const removeSubscriptionById = async (id: string) => {
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
-  const result = await showConfirmDialog({
-    message: t('subscriptionDeleteConfirm'),
-    confirmButtonClass: 'btn-error',
-  })
-  if (!result.confirmed) return
-  removeSubscription(id)
-}
+const removeSubscriptionById = (id: string) =>
+  confirmDanger(t('subscriptionDeleteConfirm'), () => removeSubscription(id))
 
 const refreshOne = async (id: string) => {
   const result = await refreshSubscriptionWithImport(id)

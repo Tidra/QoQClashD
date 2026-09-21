@@ -56,3 +56,14 @@ export const resolveConfirmDialog = (action: ConfirmDialogAction, checked = fals
   currentConfirmDialog.resolve({ confirmed: action === 'confirm', checked, action })
   showNextConfirmDialog()
 }
+
+/** 删除类操作的统一确认框：红色确认按钮，确认后才执行 run()。返回是否真的执行了。 */
+export const confirmDanger = async (
+  message: string,
+  run: () => void | Promise<void>,
+): Promise<boolean> => {
+  const { confirmed } = await showConfirmDialog({ message, confirmButtonClass: 'btn-error' })
+  if (!confirmed) return false
+  await run()
+  return true
+}
