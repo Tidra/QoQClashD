@@ -48,3 +48,7 @@ coverage
 .env
 .env.*
 !.env.example
+
+# 本地留档的设计/架构说明，不随仓库公开（README 已自述全部对外信息）
+/docs/
+/packages/agent/MANUAL.md

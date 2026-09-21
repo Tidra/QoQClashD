@@ -29,8 +29,6 @@ server/                   agent 宿主：静态资源 + /api/control + /api/miho
 packages/agent/           控制服务库：supervisor、profiles、storage、session、geo、tun
 packages/config-editor/   配置对象 ↔ YAML 的双向编辑内核
 scripts/                  本地开发（同时拉起 Vite 与 agent 宿主）
-test/                     基于 Chrome DevTools Protocol 的界面验证脚本
-docs/                     架构与部署说明
 ```
 
 ## 快速开始
@@ -58,7 +56,6 @@ pnpm start          # 单进程提供页面 + /api/control + /api/mihomo
 pnpm type-check                          # vue-tsc 全量构建检查
 pnpm lint                                # eslint（pre-commit 由 lint-staged 触发）
 pnpm --filter @metacubexd/agent test     # agent 单元测试（vitest）
-node test/verify.mjs                     # 浏览器端验证脚本，见 test/README.md
 ```
 
 ## Docker
@@ -89,7 +86,7 @@ docker run -d --name qoqclashd -p 8080:80 -p 7890:7890 \
 | `data/profiles/`          | 订阅原文与 profile 输入                                                        |
 | `kernel/`                 | mihomo 二进制与 GEO 库                                                         |
 
-环境变量都有默认值，通常不需要设置：`PANEL_HOST` / `PANEL_PORT` / `QOQCLASHD_HOME` / `DATA_DIR` / `CORE_STORAGE_DIR` / `API_HOST` / `API_SECRET` / `MIHOMO_BINARY` / `CONTROL_TOKEN`。详见 [docs/qoqclashd-deployment.md](docs/qoqclashd-deployment.md)。
+环境变量都有默认值，通常不需要设置：`PANEL_HOST` / `PANEL_PORT` / `QOQCLASHD_HOME` / `DATA_DIR` / `CORE_STORAGE_DIR` / `API_HOST` / `API_SECRET` / `MIHOMO_BINARY` / `CONTROL_TOKEN`。完整模板见 [.env.example](.env.example)。
 
 ## 安全说明
 
@@ -98,12 +95,7 @@ docker run -d --name qoqclashd -p 8080:80 -p 7890:7890 \
   密码和订阅地址，不要提交，也不要带进镜像构建上下文。构建期注入前端的只有 `FONT` 一个变量。
 - 裸机默认只监听 `127.0.0.1`。把面板暴露到公网时请自行加反代与 TLS；Clash API 端口（默认 9090）应保持仅容器/主机内部可达。
 - 若同时跑两个后端实例，第二个会在启动时因抢不到 `data/server.lock` 直接退出——sql.js 整文件回写，双开会互相覆盖数据。
-
-## 相关文档
-
-- [架构与运行说明](docs/qoqclashd-architecture.md)
-- [部署指南](docs/qoqclashd-deployment.md)
-- [agent 宿主接口手册](packages/agent/MANUAL.md)
+- 内核二进制有指纹账本（`kernel/kernel-sha256.json`）：首次下载记录可执行文件的 SHA-256，之后同一版本再下载必须一致，对不上就拒绝落盘。mihomo 官方 release 不提供校验文件，所以这防的是镜像站事后偷换，防不住首次下载——首次装完建议自行核对后端日志里打印的摘要。
 
 界面与交互沿用 zashboard 的设计与代码基础，本项目在其上补齐内核托管、业务持久化与分流配置能力。
 

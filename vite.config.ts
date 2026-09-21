@@ -37,11 +37,24 @@ export default defineConfig({
       workbox: {
         // The globe is lazy-loaded, but its local textures and bundled attribution must
         // remain available after the first PWA install/update for offline cache reuse.
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webp,jpg,md}'],
+        // 字体不在这份名单里：默认构建会切出 281 个 woff2 子集共 6.3MB，预缓存等于
+        // 装机时全量拉一遍，而浏览器其实只会用到命中的那几个 unicode-range。
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,md}'],
         // The main chunk sits at ~1.75 MiB — under Workbox's 2 MiB default, but not
         // by enough to rely on. Keep the ceiling raised so it can't silently fall out
         // of the precache (and stop working offline) the next time it grows a little.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            // 首次用到才下载，之后离线可复用。
+            urlPattern: ({ request }) => request.destination === 'font',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fonts',
+              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'QoQClashD',

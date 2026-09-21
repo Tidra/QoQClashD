@@ -28,120 +28,21 @@ catalogs:
 importers:
   .:
     dependencies:
-      '@eslint/plugin-kit':
-        specifier: ^0.7.2
-        version: 0.7.2
-      '@fontsource/fira-sans':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@heroicons/vue':
-        specifier: ^2.2.0
-        version: 2.2.0(vue@3.5.40(typescript@6.0.3))
       '@metacubexd/agent':
         specifier: workspace:*
         version: link:packages/agent
       '@metacubexd/config-editor':
         specifier: workspace:*
         version: link:packages/config-editor
-      '@tanstack/vue-table':
-        specifier: ^8.21.3
-        version: 8.21.3(vue@3.5.40(typescript@6.0.3))
-      '@tanstack/vue-virtual':
-        specifier: ^3.13.35
-        version: 3.13.35(vue@3.5.40(typescript@6.0.3))
-      '@types/reconnectingwebsocket':
-        specifier: ^1.0.10
-        version: 1.0.10
-      '@types/three':
-        specifier: ^0.185.1
-        version: 0.185.1
-      '@vueuse/core':
-        specifier: ^14.4.0
-        version: 14.4.0(vue@3.5.40(typescript@6.0.3))
-      axios:
-        specifier: ^1.19.0
-        version: 1.19.0(debug@4.4.3(supports-color@3.2.3))(supports-color@3.2.3)
-      countup.js:
-        specifier: ^2.10.1
-        version: 2.10.1
-      dayjs:
-        specifier: ^1.11.21
-        version: 1.11.21
-      dompurify:
-        specifier: ^3.4.12
-        version: 3.4.12
-      echarts:
-        specifier: ^6.1.0
-        version: 6.1.0
       h3:
         specifier: ^1.15.4
         version: 1.15.11
-      ipaddr.js:
-        specifier: ^2.4.0
-        version: 2.4.0
-      ky:
-        specifier: ^2.1.0
-        version: 2.1.0
-      lodash:
-        specifier: ^4.18.1
-        version: 4.18.1
-      misans:
-        specifier: ^4.1.0
-        version: 4.1.0
-      p-limit:
-        specifier: ^7.3.1
-        version: 7.3.1
-      prettier-plugin-organize-imports:
-        specifier: ^4.3.0
-        version: 4.3.0(prettier@3.9.6)(typescript@6.0.3)(vue-tsc@3.3.8(typescript@6.0.3))
-      prettier-plugin-tailwindcss:
-        specifier: ^0.8.1
-        version: 0.8.1(prettier-plugin-organize-imports@4.3.0(prettier@3.9.6)(typescript@6.0.3)(vue-tsc@3.3.8(typescript@6.0.3)))(prettier@3.9.6)
-      pretty-bytes:
-        specifier: ^7.1.1
-        version: 7.1.1
-      reconnectingwebsocket:
-        specifier: ^1.0.0
-        version: 1.0.0
-      sort-package-json:
-        specifier: ^4.0.0
-        version: 4.0.0
       sql.js:
         specifier: ^1.14.2
         version: 1.14.2
-      subsetted-fonts:
-        specifier: 1.0.4
-        version: 1.0.4
-      three:
-        specifier: ^0.185.1
-        version: 0.185.1
-      tippy.js:
-        specifier: ^6.3.7
-        version: 6.3.7
       tree-kill:
         specifier: ^1.2.2
         version: 1.2.2
-      uuid:
-        specifier: ^14.0.1
-        version: 14.0.1
-      vite-plugin-pwa:
-        specifier: ^1.3.0
-        version: 1.3.0(supports-color@3.2.3)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.13)(yaml@2.9.0))(workbox-build@7.4.1(supports-color@3.2.3))(workbox-window@7.4.1)
-      vue:
-        specifier: ^3.5.40
-        version: 3.5.40(typescript@6.0.3)
-      vue-i18n:
-        specifier: ^11.4.8
-        version: 11.4.8(vue@3.5.40(typescript@6.0.3))
-      vue-json-pretty:
-        specifier: ^2.6.0
-        version: 2.6.0(vue@3.5.40(typescript@6.0.3))
-      vue-router:
-        specifier: ^5.2.0
-        version: 5.2.0(@vue/compiler-sfc@3.5.40)(esbuild@0.27.3)(rolldown@1.1.5)(rollup@4.62.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.13)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
-      vuedraggable:
-        specifier: ^4.1.0
-        version: 4.1.0(vue@3.5.40(typescript@6.0.3))
       ws:
         specifier: ^8.21.3
         version: 8.21.3
@@ -149,9 +50,21 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
     devDependencies:
+      '@fontsource/fira-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@heroicons/vue':
+        specifier: ^2.2.0
+        version: 2.2.0(vue@3.5.40(typescript@6.0.3))
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
+      '@tanstack/vue-table':
+        specifier: ^8.21.3
+        version: 8.21.3(vue@3.5.40(typescript@6.0.3))
+      '@tanstack/vue-virtual':
+        specifier: ^3.13.35
+        version: 3.13.35(vue@3.5.40(typescript@6.0.3))
       '@tsconfig/node22':
         specifier: ^22.0.5
         version: 22.0.5
@@ -161,6 +74,12 @@ importers:
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
+      '@types/reconnectingwebsocket':
+        specifier: ^1.0.10
+        version: 1.0.10
+      '@types/three':
+        specifier: ^0.185.1
+        version: 0.185.1
       '@types/w3c-web-usb':
         specifier: ^1.0.14
         version: 1.0.14
@@ -182,9 +101,27 @@ importers:
       '@vue/tsconfig':
         specifier: ^0.9.1
         version: 0.9.1(typescript@6.0.3)(vue@3.5.40(typescript@6.0.3))
+      '@vueuse/core':
+        specifier: ^14.4.0
+        version: 14.4.0(vue@3.5.40(typescript@6.0.3))
+      axios:
+        specifier: ^1.19.0
+        version: 1.19.0(debug@4.4.3(supports-color@3.2.3))(supports-color@3.2.3)
+      countup.js:
+        specifier: ^2.10.1
+        version: 2.10.1
       daisyui:
         specifier: ^5.7.8
         version: 5.7.8
+      dayjs:
+        specifier: ^1.11.21
+        version: 1.11.21
+      dompurify:
+        specifier: ^3.4.12
+        version: 3.4.12
+      echarts:
+        specifier: ^6.1.0
+        version: 6.1.0
       esbuild:
         specifier: ^0.27.3
         version: 0.27.3
@@ -197,36 +134,93 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      ipaddr.js:
+        specifier: ^2.4.0
+        version: 2.4.0
+      ky:
+        specifier: ^2.1.0
+        version: 2.1.0
       lint-staged:
         specifier: ^17.2.0
         version: 17.2.0
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
       mmdb-lib:
         specifier: ^3.0.3
         version: 3.0.3
+      p-limit:
+        specifier: ^7.3.1
+        version: 7.3.1
       postcss:
         specifier: ^8.5.25
         version: 8.5.25
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      prettier-plugin-organize-imports:
+        specifier: ^4.3.0
+        version: 4.3.0(prettier@3.9.6)(typescript@6.0.3)(vue-tsc@3.3.8(typescript@6.0.3))
+      prettier-plugin-tailwindcss:
+        specifier: ^0.8.1
+        version: 0.8.1(prettier-plugin-organize-imports@4.3.0(prettier@3.9.6)(typescript@6.0.3)(vue-tsc@3.3.8(typescript@6.0.3)))(prettier@3.9.6)
+      pretty-bytes:
+        specifier: ^7.1.1
+        version: 7.1.1
+      reconnectingwebsocket:
+        specifier: ^1.0.0
+        version: 1.0.0
+      sort-package-json:
+        specifier: ^4.0.0
+        version: 4.0.0
+      subsetted-fonts:
+        specifier: 1.0.4
+        version: 1.0.4
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
+      three:
+        specifier: ^0.185.1
+        version: 0.185.1
+      tippy.js:
+        specifier: ^6.3.7
+        version: 6.3.7
       tsx:
         specifier: ^4.19.3
         version: 4.23.13
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
       vite:
         specifier: ^8.1.5
         version: 8.1.5(@types/node@26.1.2)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.13)(yaml@2.9.0)
+      vite-plugin-pwa:
+        specifier: ^1.3.0
+        version: 1.3.0(supports-color@3.2.3)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.13)(yaml@2.9.0))(workbox-build@7.4.1(supports-color@3.2.3))(workbox-window@7.4.1)
+      vue:
+        specifier: ^3.5.40
+        version: 3.5.40(typescript@6.0.3)
+      vue-i18n:
+        specifier: ^11.4.8
+        version: 11.4.8(vue@3.5.40(typescript@6.0.3))
+      vue-json-pretty:
+        specifier: ^2.6.0
+        version: 2.6.0(vue@3.5.40(typescript@6.0.3))
+      vue-router:
+        specifier: ^5.2.0
+        version: 5.2.0(@vue/compiler-sfc@3.5.40)(esbuild@0.27.3)(rolldown@1.1.5)(rollup@4.62.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.13)(yaml@2.9.0))(vue@3.5.40(typescript@6.0.3))
       vue-tsc:
         specifier: ^3.3.8
         version: 3.3.8(typescript@6.0.3)
+      vuedraggable:
+        specifier: ^4.1.0
+        version: 4.1.0(vue@3.5.40(typescript@6.0.3))
 
   packages/agent:
     dependencies:
@@ -4739,12 +4733,6 @@ packages:
       }
     engines: { node: '>=16 || 14 >=14.17' }
 
-  misans@4.1.0:
-    resolution:
-      {
-        integrity: sha512-CcIRrIVhnt+OpGXvw1Q8llGBVAy5P2mdov/kJ0gGa81sJ0RY7mZp2fNAt2ySTCeZos+wo7ZnzDZxl1In//7FdA==,
-      }
-
   mlly@1.8.2:
     resolution:
       {
@@ -9071,8 +9059,6 @@ snapshots:
       brace-expansion: 2.1.1
 
   minipass@7.1.3: {}
-
-  misans@4.1.0: {}
 
   mlly@1.8.2:
     dependencies:
