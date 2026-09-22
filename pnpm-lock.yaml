@@ -28,15 +28,6 @@ catalogs:
 importers:
   .:
     dependencies:
-      '@metacubexd/agent':
-        specifier: workspace:*
-        version: link:packages/agent
-      '@metacubexd/config-editor':
-        specifier: workspace:*
-        version: link:packages/config-editor
-      h3:
-        specifier: ^1.15.4
-        version: 1.15.11
       sql.js:
         specifier: ^1.14.2
         version: 1.14.2
@@ -56,6 +47,12 @@ importers:
       '@heroicons/vue':
         specifier: ^2.2.0
         version: 2.2.0(vue@3.5.40(typescript@6.0.3))
+      '@metacubexd/agent':
+        specifier: workspace:*
+        version: link:packages/agent
+      '@metacubexd/config-editor':
+        specifier: workspace:*
+        version: link:packages/config-editor
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -131,6 +128,9 @@ importers:
       eslint-plugin-vue:
         specifier: ^10.10.0
         version: 10.10.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0)(supports-color@3.2.3))(supports-color@3.2.3)(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0)(supports-color@3.2.3))(vue-eslint-parser@10.4.1(eslint@10.8.0(jiti@2.7.0)(supports-color@3.2.3))(supports-color@3.2.3))
+      h3:
+        specifier: ^1.15.4
+        version: 1.15.11
       husky:
         specifier: ^9.1.7
         version: 9.1.7

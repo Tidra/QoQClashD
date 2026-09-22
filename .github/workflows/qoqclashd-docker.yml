@@ -12,6 +12,12 @@ permissions:
   contents: read
   packages: write
 
+# 同一个 ref 上只跑一趟：两次连推 master 会并行开两个 build-and-push，抢同一个 latest
+# 标签和同一份 type=gha 缓存。已经进镜像推送阶段的绝不取消，所以 cancel-in-progress 关。
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 

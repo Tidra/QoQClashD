@@ -75,6 +75,8 @@ docker run -d --name qoqclashd -p 8080:80 -p 7890:7890 \
 
 访问 `http://localhost:8080`。`data/` 与 `kernel/` 挂持久卷即可升级与备份；内核二进制不需要预先塞进镜像，面板会在容器内按需下载。
 
+`-p 7890:7890` 只是把端口放出来：`allow-lan` 默认为 `false`，内核只绑容器内的 `127.0.0.1`，局域网设备连过来仍是 connection refused。要让其他设备用上代理，还得在「分流中心 - 主入口」里打开「允许区域网络」。
+
 `.github/workflows/qoqclashd-docker.yml` 在 `master` 推送、打 `v*` 标签或手动触发时，构建 `linux/amd64` 与 `linux/arm64` 镜像并发布到 GHCR（使用仓库自带的 `GITHUB_TOKEN`，无需额外 secrets）。
 
 ## 配置与数据
