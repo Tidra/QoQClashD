@@ -356,9 +356,9 @@ export function createControlRouter(deps: ControlRouterDeps): App {
     `${PREFIX}/kernel/status`,
     defineEventHandler(async () => ({
       ...supervisor.getState(),
-      // state 里没有明文密码（见 MihomoSupervisor.getControllerSecret），浏览器只
-      // 需要知道「有没有设密码」来决定占位符文案。
-      secretSet: supervisor.getControllerSecret().length > 0,
+      // 面板密码才是「有没有设密码」的权威来源；内核 secret 在密码落地前是 supervisor
+      // 随机生成的，拿它判会一直为真。没接 auth 的宿主（进程内嵌入）才退回看 secret。
+      secretSet: auth ? !auth.needsSetup() : supervisor.getControllerSecret().length > 0,
       ...(await deps.kernelStatusExtras?.()),
     })),
   )

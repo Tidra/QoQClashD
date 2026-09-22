@@ -81,18 +81,18 @@ docker run -d --name qoqclashd -p 8080:80 -p 7890:7890 \
 
 ## 配置与数据
 
-| 路径                      | 内容                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------ |
-| `data/qoqclashd.sqlite`   | 面板密码、订阅、节点池、代理组、规则、入口——所有可编辑配置的权威来源           |
-| `data/config/active.yaml` | 由面板按 SQLite 合成、下发给内核的产物，不是编辑入口                           |
-| `data/profiles/`          | 订阅原文与 profile 输入                                                        |
-| `kernel/`                 | mihomo 二进制与 GEO 库                                                         |
+| 路径                      | 内容                                                                 |
+| ------------------------- | -------------------------------------------------------------------- |
+| `data/qoqclashd.sqlite`   | 面板密码、订阅、节点池、代理组、规则、入口——所有可编辑配置的权威来源 |
+| `data/config/active.yaml` | 由面板按 SQLite 合成、下发给内核的产物，不是编辑入口                 |
+| `data/profiles/`          | 订阅原文与 profile 输入                                              |
+| `kernel/`                 | mihomo 二进制与 GEO 库                                               |
 
-环境变量都有默认值，通常不需要设置：`PANEL_HOST` / `PANEL_PORT` / `QOQCLASHD_HOME` / `DATA_DIR` / `CORE_STORAGE_DIR` / `API_HOST` / `API_SECRET` / `MIHOMO_BINARY` / `CONTROL_TOKEN`。完整模板见 [.env.example](.env.example)。
+运行时环境变量只有六个，且都有默认值，通常不需要设置：`PANEL_HOST` / `PANEL_PORT` / `QOQCLASHD_HOME` / `DATA_DIR` / `CORE_STORAGE_DIR` / `MIHOMO_BINARY`。完整模板见 [.env.example](.env.example)。内核 API 端口与面板密码不属于环境变量——前者在设置页改，后者在首屏创建，两者都存在 SQLite 里。
 
 ## 安全说明
 
-- **面板密码就是内核 Clash API 的 secret**，两端共用一个值，只存在 `data/qoqclashd.sqlite` 里。浏览器只拿一张签名会话 cookie，登录态不依赖任何前端存储。
+- **面板密码就是内核 Clash API 的 secret**，两端共用一个值，只存在 `data/qoqclashd.sqlite` 里，没有任何环境变量可以预置它。浏览器只拿一张签名会话 cookie，登录态不依赖任何前端存储；`/api/control` 也只认这张 cookie。
 - `data/`、`kernel/`、`.env` 以及任何日志/设计稿都写在 `.gitignore` 与 `.dockerignore` 中——SQLite 内含
   密码和订阅地址，不要提交，也不要带进镜像构建上下文。构建期注入前端的只有 `FONT` 一个变量。
 - 裸机默认只监听 `127.0.0.1`。把面板暴露到公网时请自行加反代与 TLS；Clash API 端口（默认 9090）应保持仅容器/主机内部可达。

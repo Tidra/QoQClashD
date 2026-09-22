@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
-import { loadRuntimeConfig, normalizeExternalController } from './config.js'
+import { loadRuntimeConfig } from './config.js'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 const distDir = join(projectRoot, 'dist')
@@ -73,9 +73,6 @@ const agent = createAgent({
   homeDir: config.configDir,
   activeConfigPath: join(config.configDir, 'active.yaml'),
   profilesDir: config.profilesDir,
-  externalController: normalizeExternalController(config.apiHost),
-  secret: config.apiSecret,
-  agentToken: config.agentToken,
 })
 const controlListener = toNodeListener(agent.router)
 const websocketServer = new WebSocketServer({ noServer: true })
@@ -85,8 +82,9 @@ const websocketServer = new WebSocketServer({ noServer: true })
 const hasPanelSession = (req: IncomingMessage) =>
   agent.sessions.verify(readSessionCookie(req.headers.cookie))
 
-// 内核的 API 地址与密码都归 agent 托管（设置页可改端口/共用密码），环境变量只是
-// 初始值，所以每次转发都读 supervisor 的实时状态，而不是启动时快照的 config。
+// 内核的 API 地址与密码都归 agent 托管：地址固定本机回环、端口设置页可改（KV 持久化），
+// secret 在面板密码落地前由 supervisor 随机生成。所以每次转发都读 supervisor 的实时状态，
+// 而不是启动时快照。
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]'])
 const mihomoUpstream = () => {
   // secret 只能走 getControllerSecret()：它故意不在 getState() 里，状态对象会被

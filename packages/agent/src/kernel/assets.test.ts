@@ -4,8 +4,8 @@ import { MIHOMO_VERSION, mihomoAsset } from './assets'
 const V = MIHOMO_VERSION
 
 describe('mIHOMO_VERSION', () => {
-  it('is pinned to v1.19.27 (overridable via env)', () => {
-    expect(MIHOMO_VERSION).toBe(process.env.MIHOMO_VERSION ?? 'v1.19.27')
+  it('is pinned to v1.19.27', () => {
+    expect(MIHOMO_VERSION).toBe('v1.19.27')
   })
 })
 
@@ -56,9 +56,7 @@ describe('mihomoAsset — all 6 (os,arch) combos', () => {
   })
 
   it('maps node arch alias x64 -> amd64', () => {
-    expect(mihomoAsset('linux', 'x64').name).toBe(
-      `mihomo-linux-amd64-compatible-${V}.gz`,
-    )
+    expect(mihomoAsset('linux', 'x64').name).toBe(`mihomo-linux-amd64-compatible-${V}.gz`)
   })
 
   it('accepts an explicit version override', () => {

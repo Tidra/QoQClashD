@@ -8,9 +8,6 @@ export interface RuntimeConfig {
   configDir: string
   profilesDir: string
   coreStorageDir: string
-  apiHost: string
-  apiSecret: string
-  agentToken: string
   binaryPath: string
 }
 
@@ -23,9 +20,7 @@ const resolveFromRoot = (root: string, value: string | undefined, fallback: stri
   resolve(root, value || fallback)
 
 export function loadRuntimeConfig(): RuntimeConfig {
-  const runtimeRoot = resolve(
-    process.env.QOQCLASHD_HOME || process.env.METACUBEXD_HOME || process.cwd(),
-  )
+  const runtimeRoot = resolve(process.env.QOQCLASHD_HOME || process.cwd())
   const coreStorageDir = resolveFromRoot(runtimeRoot, process.env.CORE_STORAGE_DIR, 'kernel')
   const dataDir = resolveFromRoot(runtimeRoot, process.env.DATA_DIR, 'data')
   const configDir = resolve(dataDir, 'config')
@@ -39,20 +34,8 @@ export function loadRuntimeConfig(): RuntimeConfig {
     configDir,
     profilesDir,
     coreStorageDir,
-    apiHost: process.env.API_HOST || 'http://127.0.0.1:9090',
-    apiSecret: process.env.API_SECRET || '',
-    agentToken: process.env.CONTROL_TOKEN || process.env.API_SECRET || '',
     binaryPath:
       process.env.MIHOMO_BINARY ||
       resolve(coreStorageDir, process.platform === 'win32' ? 'mihomo.exe' : 'mihomo'),
-  }
-}
-
-export function normalizeExternalController(apiHost: string): string {
-  try {
-    const url = new URL(apiHost)
-    return `${url.hostname}:${url.port || '9090'}`
-  } catch {
-    return apiHost.replace(/^https?:\/\//, '').replace(/\/+$/, '') || '127.0.0.1:9090'
   }
 }

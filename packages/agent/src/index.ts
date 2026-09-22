@@ -109,7 +109,7 @@ export interface AgentInfo {
 }
 
 function resolvePersistentRuntimeRoot(): string {
-  const envRoot = process.env.QOQCLASHD_HOME || process.env.METACUBEXD_HOME
+  const envRoot = process.env.QOQCLASHD_HOME
   if (envRoot) return envRoot
 
   return process.cwd()
@@ -173,8 +173,8 @@ export function createAgent(opts: CreateAgentOptions) {
   })
   const dataDir = opts.dataDir?.trim() || process.env.DATA_DIR || join(persistedRoot, 'data')
 
-  // Clash API 的绑定主机来自 env API_HOST，端口则设置页可改（KV 持久化）。
-  // env 没给地址时按本机回环 + 默认端口，保证冷启动也有一个确定的默认值。
+  // Clash API 的绑定主机来自宿主传入的 externalController，端口则设置页可改（KV 持久化）。
+  // 没传地址时按本机回环 + 默认端口，保证冷启动也有一个确定的默认值。
   const splitController = (value: string) => {
     const withScheme = value.startsWith('http') ? value : `http://${value}`
     try {
@@ -504,10 +504,11 @@ export function createAgent(opts: CreateAgentOptions) {
       kernelApiPort = persistedPort
       controllerPatch.externalController = controllerAddress(persistedPort)
     }
-    // 空字符串是有意义的取值（还没设密码 → 首屏落在创建密码那一步），只有 KV 完全
-    // 缺省时才沿用 env 兜底。会话 cookie 的签名密钥就是它，所以先灌进缓存。
+    // 空字符串是有意义的取值（还没设密码 → 首屏落在创建密码那一步），所以要灌进内存；
+    // 但不能拿它去覆盖内核 secret，否则 supervisor 的随机兜底被清成空串，等于内核 API
+    // 不设防。会话 cookie 的签名密钥读的是 panelPassword，与内核 secret 各自独立。
     panelPassword = persistedSecret ?? ''
-    if (persistedSecret !== undefined && persistedSecret !== supervisor.getControllerSecret()) {
+    if (persistedSecret && persistedSecret !== supervisor.getControllerSecret()) {
       controllerPatch.secret = persistedSecret
     }
     supervisor.setController?.(controllerPatch)

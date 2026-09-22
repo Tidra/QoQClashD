@@ -197,11 +197,18 @@ describe('createAgent', () => {
     expect(restarted.sessions.verify(restarted.sessions.issue())).toBe(true)
   })
 
-  it('env 给了 agentToken 时它即成初始密码，agent 不再放开控制面', async () => {
+  it('宿主给了 agentToken 时它即成初始密码，agent 不再放开控制面', async () => {
     const agent = createAgent({ ...opts(), agentToken: 'env-tok' })
     await agent.init()
     expect(agent.auth.needsSetup()).toBe(false)
     expect(agent.supervisor.getControllerSecret()).toBe('env-tok')
+  })
+
+  it('还没设过密码时不把 KV 的空串回灌成内核 secret，保住随机兜底', async () => {
+    const agent = createAgent({ ...opts(), agentToken: undefined })
+    await agent.init()
+    expect(agent.auth.needsSetup()).toBe(true)
+    expect(agent.supervisor.getControllerSecret().length).toBeGreaterThan(0)
   })
 
   it('PUT /kernel/api 只管端口', async () => {
