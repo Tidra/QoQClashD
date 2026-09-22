@@ -63,7 +63,7 @@ export const createLogsAccumulator = (
       logsTemp.unshift({
         ...data,
         payload,
-        time: dayjs().format('HH:mm:ss'),
+        time: data.time ?? dayjs().format('HH:mm:ss'),
         seq: idx++,
       })
     }

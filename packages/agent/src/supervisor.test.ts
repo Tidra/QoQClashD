@@ -265,6 +265,68 @@ describe('createSupervisor — initial state', () => {
     await sup.dispose()
   })
 
+  it('keeps emitted lines in getRecentLogs so a late subscriber can replay them', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: (async () =>
+        new Response(JSON.stringify({ version: '1' }), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    })
+    await sup.start()
+    proc.stderr.emit('data', Buffer.from('Initial Config Error: bad yaml\n'))
+    // 旧 -> 新，并带着产生时刻，面板据此还原时间列。
+    const recent = sup.getRecentLogs()
+    expect(recent).toHaveLength(1)
+    expect(recent[0]).toMatchObject({
+      stream: 'stderr',
+      line: 'Initial Config Error: bad yaml',
+      ts: expect.any(Number),
+    })
+    await sup.dispose()
+  })
+
+  it('bounds the replay history at logHistorySize, dropping the oldest lines', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(
+      { ...opts, logHistorySize: 2 },
+      {
+        spawn: (() => proc) as never,
+        fetch: (async () =>
+          new Response(JSON.stringify({ version: '1' }), {
+            status: 200,
+          })) as unknown as typeof fetch,
+      },
+    )
+    await sup.start()
+    proc.stdout.emit('data', Buffer.from('one\ntwo\nthree\n'))
+    expect(sup.getRecentLogs().map((l) => l.line)).toEqual(['two', 'three'])
+    await sup.dispose()
+  })
+
+  it('keeps the history across a restart — why the last boot failed is the point', async () => {
+    const opts = baseOpts()
+    const spawned = [new FakeProc(), new FakeProc()]
+    const [first, second] = spawned as [FakeProc, FakeProc]
+    const sup = createSupervisor(opts, {
+      spawn: (() => spawned.shift()!) as never,
+      fetch: (async () =>
+        new Response(JSON.stringify({ version: '1' }), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    })
+    await sup.start()
+    first.stdout.emit('data', Buffer.from('boot 1 output\n'))
+    await sup.stop()
+    await sup.start()
+    second.stdout.emit('data', Buffer.from('boot 2 output\n'))
+    expect(sup.getRecentLogs().map((l) => l.line)).toEqual(['boot 1 output', 'boot 2 output'])
+    await sup.dispose()
+  })
+
   it('off() stops delivering log/state events to an unregistered callback', async () => {
     const opts = baseOpts()
     const proc = new FakeProc()
@@ -542,6 +604,45 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(r.message).toContain('parse error')
   })
 
+  it('feeds the validate probe output into the log history so a 400 is explainable', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    const logs: string[] = []
+    sup.on('log', (l) => logs.push(`${l.stream}:${l.line}`))
+    const p = sup.validate(opts.activeConfigPath)
+    proc.stdout.emit('data', Buffer.from('time="x" level=info msg="config load"\n'))
+    proc.stderr.emit('data', Buffer.from('time="x" level=fatal msg="Parse config error: bad"\n'))
+    proc.emitExit(1, null)
+    await p
+    // 最后一行是 supervisor 自己补的判决：内核那句 "... test failed" 是裸 stdout，
+    // 面板按通道只能标成 info，退出码才是这次校验的结论。
+    expect(logs).toEqual([
+      'stdout:time="x" level=info msg="config load"',
+      'stderr:time="x" level=fatal msg="Parse config error: bad"',
+      'stderr:config validation failed (exit code 1)',
+    ])
+    expect(sup.getRecentLogs().map((l) => `${l.stream}:${l.line}`)).toEqual(logs)
+  })
+
+  it('synthesizes a log line when the probe dies without output', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    const p = sup.validate(opts.activeConfigPath)
+    proc.emitExit(137, null)
+    const r = await p
+    expect(r.valid).toBe(false)
+    expect(r.message).toContain('no output')
+    expect(sup.getRecentLogs().map((l) => l.line)).toEqual([r.message])
+  })
+
   it('gives sequential first-run GEO downloads a 300s validation window (#2118, #2121)', async () => {
     const opts = baseOpts()
     const proc = new FakeProc()
@@ -597,6 +698,11 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(validation.valid).toBe(false)
     expect(validation.message).toContain('validate timeout after 25ms')
     expect(validation.message).toContain('GeoIP.dat')
+    // 超时也是结论：探针自己的行没有级别，日志页要有一行 stderr 的判决指着它。
+    expect(sup.getRecentLogs().map((l) => `${l.stream}:${l.line}`)).toEqual([
+      "stderr:Can't find GeoIP.dat, start download",
+      'stderr:validate timeout after 25ms',
+    ])
   })
 
   it('keeps the timeout verdict when kill emits exit synchronously', async () => {

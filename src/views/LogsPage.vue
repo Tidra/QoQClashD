@@ -34,7 +34,14 @@ import LogsTable from '@/components/logs/LogsTable.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { LIST_DISPLAY_STYLE } from '@/constant'
 import { toSearchRegex } from '@/helper/search'
-import { logFilter, logFilterEnabled, logFilterRegex, logTypeFilter, logs } from '@/store/logs'
+import {
+  logFilter,
+  logFilterEnabled,
+  logFilterRegex,
+  logTypeFilter,
+  logs,
+  matchesLogFilter,
+} from '@/store/logs'
 import { logDisplayStyle } from '@/store/settings'
 import type { LogWithSeq } from '@/types'
 import { computed } from 'vue'
@@ -55,14 +62,7 @@ const renderLogs = computed(() => {
         return false
       }
 
-      if (
-        logTypeFilter.value &&
-        !(log.payload.includes(logTypeFilter.value) || log.type === logTypeFilter.value)
-      ) {
-        return false
-      }
-
-      return true
+      return matchesLogFilter(log, logTypeFilter.value)
     })
   }
 

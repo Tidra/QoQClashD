@@ -197,6 +197,9 @@ const zhTW: Partial<LANG_MESSAGE> = {
   allConnections: '全部',
   logLevel: '日誌等級',
   logType: '日誌類型',
+  logOrigin: '日誌來源',
+  kernelLogs: '內核日誌',
+  serviceLogs: '服務日誌',
 
   // Connections, proxies, and rules pages
   twoColumnProxyGroup: '雙列顯示代理組',
@@ -564,6 +567,7 @@ const zhTW: Partial<LANG_MESSAGE> = {
   kernelSharedSecretSummary:
     '不顯示明文 · 面板登入與內核 API 共用同一組密碼，修改需驗證舊密碼並輸入兩次，儲存後重啟內核寫入配置',
   kernelPasswordNotSet: '未設定',
+  kernelLogLevelSummary: '內核在跑時即時生效，並隨下次「應用配置」寫入內核配置',
   kernelPasswordChange: '修改密碼',
   kernelPasswordSaved: '密碼已更新',
   saveKernelApi: '儲存 API 設定',

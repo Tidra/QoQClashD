@@ -36,10 +36,10 @@
         </div>
 
         <div class="mt-4 grid gap-2 sm:grid-cols-3">
-          <div class="border-base-300/70 bg-base-200/40 rounded-xl border p-3">
-            <div class="text-base-content/50 text-[10px] tracking-[0.18em] uppercase">内置内核</div>
+          <div class="border-base-300/70 bg-base-200/40 min-w-0 rounded-xl border p-3">
+            <div class="text-base-content/50 text-[10px] tracking-[0.18em] uppercase">后端</div>
             <div class="text-base-content mt-2 text-sm font-medium">{{ kernelLabel }}</div>
-            <div class="text-base-content/55 mt-1 text-xs">{{ kernelUrl }}</div>
+            <div class="text-base-content/55 mt-1 text-xs break-all">{{ kernelUrl }}</div>
           </div>
           <div class="border-base-300/70 bg-base-200/40 rounded-xl border p-3">
             <div class="text-base-content/50 text-[10px] tracking-[0.18em] uppercase">内核</div>

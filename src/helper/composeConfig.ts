@@ -1,5 +1,7 @@
 // 把面板各 store 里的草稿（入口/节点/代理组/规则/子规则/规则集合/TUN）组合成
 // mihomo config.yaml，不依赖内核运行，用于「查看当前 YAML 配置」。
+import { kernelLogLevel } from '@/assembly/config'
+import { LOG_LEVEL } from '@/constant'
 import type { CustomNode } from '@/store/nodePool'
 import { buildMergedNodeList } from '@/store/nodePool'
 import {
@@ -149,6 +151,9 @@ export const composeConfigYaml = (): string => {
   }
   if (main['allow-lan']) config['allow-lan'] = true
   if (main.tun) config.tun = tunToEntry(main.tun)
+  // 日志等级来自面板偏好（见 assembly/config/logLevel）。info 就是 mihomo 自己的默认值，
+  // 只有改过才写这一行 —— 否则所有人升级完都凭空多出一个「有改动待应用」的红点。
+  if (kernelLogLevel.value !== LOG_LEVEL.Info) config['log-level'] = kernelLogLevel.value
 
   if (nodes.length) config.proxies = nodes.map(nodeToProxy)
 

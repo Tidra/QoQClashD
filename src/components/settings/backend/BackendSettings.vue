@@ -170,6 +170,21 @@
           </div>
         </template>
 
+        <!-- 日志等级：内核连着时 PATCH /configs 即时生效，同时记进偏好，由 composeConfig
+             在下一趟「应用配置」写进 active.yaml —— 只有前者的话重启内核就退回默认值。 -->
+        <div class="setting-item">
+          <div class="setting-item-label">
+            {{ $t('logLevel') }}
+            <div class="setting-item-summary">{{ $t('kernelLogLevelSummary') }}</div>
+          </div>
+          <SelectInput
+            :model-value="kernelLogLevel"
+            :options="logLevelOptions"
+            class="select select-bordered select-sm w-32"
+            @change="setKernelLogLevel"
+          />
+        </div>
+
         <div class="setting-item">
           <div class="setting-item-label">{{ $t('kernelDownloadRepo') }}</div>
           <SelectInput
@@ -413,6 +428,7 @@
 </template>
 
 <script setup lang="ts">
+import { kernelLogLevel, setKernelLogLevel, supportedLogLevels } from '@/assembly/config'
 import { stopKernelSession } from '@/assembly/session'
 import { isCoreUpdateAvailable } from '@/assembly/version'
 import SelectInput from '@/components/common/SelectInput.vue'
@@ -554,6 +570,15 @@ const mirrorOptions = computed<SelectOption<string>[]>(() => {
   const options = list.map((value) => ({ value, label: value }))
   if (!options.some((option) => option.value === kernelMirror.value)) {
     options.unshift({ value: kernelMirror.value, label: kernelMirror.value })
+  }
+  return options
+})
+
+// 探测还没出结论时能力表是不全的（例如 mihomo 的 silent 那一档），别让已存等级显示成空。
+const logLevelOptions = computed(() => {
+  const options = supportedLogLevels.value.map((value) => ({ value, label: value }))
+  if (!options.some((option) => option.value === kernelLogLevel.value)) {
+    options.unshift({ value: kernelLogLevel.value, label: kernelLogLevel.value })
   }
   return options
 })

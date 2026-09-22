@@ -63,9 +63,9 @@ const soft = computed(() => {
     // ports / tun / allow-lan 等 PATCH /configs 配置块。
     configPatch: mihomo,
 
-    // ---------- 日志级别集合 ----------
-    // /logs?level= 传了内核不认的级别会被 400 掉,WS 随后陷入无限重连,
-    // 所以按内核各自支持的取值逐档点亮,拼装见 assembly/logs。
+    // ---------- 内核 log-level 取值集合 ----------
+    // /configs 只认内核自己支持的级别，传错会被 400；那一行写进 active.yaml 后
+    // 传错更是启动即解析失败。所以逐档点亮,拼装见 assembly/config/logLevel。
     // trace:honk 有,mihomo 没有
     traceLogLevel: honk,
     // silent:mihomo 有,honk 没有

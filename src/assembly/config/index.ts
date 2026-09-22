@@ -37,3 +37,6 @@ export {
   updateConfigsAPI,
   updateGeoDataAPI,
 } from '@/api/clash'
+
+// 内核日志等级:偏好 + 可选档位 + 即时下发,实现见 logLevel。
+export { kernelLogLevel, setKernelLogLevel, supportedLogLevels } from './logLevel'

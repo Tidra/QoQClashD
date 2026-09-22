@@ -199,6 +199,9 @@ const zh: LANG_MESSAGE = {
   allConnections: '全部',
   logLevel: '日志等级',
   logType: '日志类型',
+  logOrigin: '日志来源',
+  kernelLogs: '内核日志',
+  serviceLogs: '服务日志',
 
   // Connections, proxies, and rules pages
   twoColumnProxyGroup: '双列显示代理组',
@@ -566,6 +569,7 @@ const zh: LANG_MESSAGE = {
   kernelSharedSecretSummary:
     '不回显明文 · 面板登录与内核 API 共用这一个密码，修改需验旧密码并输入两遍，保存后重启内核写入配置',
   kernelPasswordNotSet: '未设置',
+  kernelLogLevelSummary: '内核在跑时即时生效，并随下次「应用配置」写入内核配置',
   kernelPasswordChange: '修改密码',
   kernelPasswordSaved: '密码已更新',
   saveKernelApi: '保存 API 设置',

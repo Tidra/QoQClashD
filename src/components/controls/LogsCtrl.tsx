@@ -2,15 +2,14 @@ import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { LIST_DISPLAY_STYLE, LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
-  initLogs,
   isPaused,
+  LOG_ORIGINS,
   logFilter,
   logFilterEnabled,
   logFilterRegex,
-  logLevel,
-  logTypeFilter,
   logs,
-  supportedLogLevels,
+  logTypeFilter,
+  originFilterValue,
 } from '@/store/logs'
 import { logDisplayStyle, logRetentionLimit, logSearchHistory } from '@/store/settings'
 import {
@@ -57,8 +56,8 @@ export default defineComponent({
 
     watch(logFilter, insertLogSearchHistory)
 
-    // 可选级别由内核决定,收敛在组装层(见 assembly/logs)。
-    const logLevels = supportedLogLevels
+    // 等级只用来给过滤下拉里出现过的等级定顺序(从低到高)。
+    const logLevels = Object.values(LOG_LEVEL)
 
     const logFilterOptions = computed(() => {
       const types: string[] = []
@@ -79,8 +78,8 @@ export default defineComponent({
 
       return {
         levels: levels.sort((a, b) => {
-          const aIdx = logLevels.value.indexOf(a as LOG_LEVEL)
-          const bIdx = logLevels.value.indexOf(b as LOG_LEVEL)
+          const aIdx = logLevels.indexOf(a as LOG_LEVEL)
+          const bIdx = logLevels.indexOf(b as LOG_LEVEL)
           return aIdx - bIdx
         }),
         types: types.sort(),
@@ -114,15 +113,6 @@ export default defineComponent({
     }
 
     return () => {
-      const levelSelect = (
-        <SelectInput
-          class={['select select-sm min-w-30']}
-          modelValue={logLevel.value}
-          onUpdate:modelValue={(value) => (logLevel.value = value as string)}
-          onChange={initLogs}
-          options={logLevels.value.map((value) => ({ value, label: value }))}
-        />
-      )
       const searchInput = (
         <TextInput
           v-model={logFilter.value}
@@ -145,6 +135,12 @@ export default defineComponent({
           onUpdate:modelValue={(value) => (logTypeFilter.value = value as string)}
           options={[
             { value: '', label: t('all') },
+            // 一条流里两种行，所以「看哪种」是过滤而不是换通道。
+            ...LOG_ORIGINS.map((value) => ({
+              value: originFilterValue(value),
+              label: t(value === 'kernel' ? 'kernelLogs' : 'serviceLogs'),
+              group: t('logOrigin'),
+            })),
             ...logFilterOptions.value.levels.map((value) => ({
               value,
               label: value,
@@ -272,10 +268,7 @@ export default defineComponent({
 
       const content = !isLargeCtrlsBar.value ? (
         <div class="flex flex-col gap-2 p-2">
-          <div class="flex w-full justify-between gap-2">
-            <div class="flex flex-1">{levelSelect}</div>
-            {buttons}
-          </div>
+          <div class="flex w-full justify-end">{buttons}</div>
           <div class="join">
             {logTypeSelect}
             {searchInput}
@@ -283,12 +276,9 @@ export default defineComponent({
         </div>
       ) : (
         <div class="flex items-center justify-between gap-2 p-2">
-          <div class="flex items-center gap-2">
-            {levelSelect}
-            <div class="join w-96">
-              {logTypeSelect}
-              {searchInput}
-            </div>
+          <div class="join w-96">
+            {logTypeSelect}
+            {searchInput}
           </div>
           {buttons}
         </div>

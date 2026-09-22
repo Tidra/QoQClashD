@@ -200,6 +200,9 @@ const ru: Partial<LANG_MESSAGE> = {
   allConnections: 'Все',
   logLevel: 'Уровень журнала',
   logType: 'Тип журнала',
+  logOrigin: 'Источник журнала',
+  kernelLogs: 'Логи ядра',
+  serviceLogs: 'Логи сервиса',
 
   // Connections, proxies, and rules pages
   twoColumnProxyGroup: 'Группа прокси в два столбца',
@@ -581,6 +584,8 @@ const ru: Partial<LANG_MESSAGE> = {
   kernelSharedSecretSummary:
     'Нигде не показывается и не передаётся в открытом виде · один пароль и для входа в панель, и для API ядра; при смене проверяется старый пароль, новый вводится дважды, а ядро перезапускается для записи конфигурации',
   kernelPasswordNotSet: 'Не задан',
+  kernelLogLevelSummary:
+    'Действует сразу для запущенного ядра и записывается в его конфигурацию при следующем применении',
   kernelPasswordChange: 'Изменить пароль',
   kernelPasswordSaved: 'Пароль обновлён',
   saveKernelApi: 'Сохранить настройки API',

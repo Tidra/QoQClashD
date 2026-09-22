@@ -199,6 +199,9 @@ const en = {
   allConnections: 'All',
   logLevel: 'Log level',
   logType: 'Log type',
+  logOrigin: 'Log source',
+  kernelLogs: 'Kernel logs',
+  serviceLogs: 'Service logs',
 
   // Connections, proxies, and rules pages
   twoColumnProxyGroup: 'Two-column proxy groups',
@@ -580,6 +583,8 @@ const en = {
   kernelSharedSecretSummary:
     'Never shown or sent in plaintext · one password for both the panel login and the kernel API; changing it verifies the old password, asks twice, and restarts the kernel to write the config',
   kernelPasswordNotSet: 'Not set',
+  kernelLogLevelSummary:
+    'Takes effect on a running kernel right away, and is written into the kernel config by the next "Apply config"',
   kernelPasswordChange: 'Change password',
   kernelPasswordSaved: 'Password updated',
   saveKernelApi: 'Save API settings',

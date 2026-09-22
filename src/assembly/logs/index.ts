@@ -1,58 +1,43 @@
-// 组装层 · logs 门面。持有完整的 logs ref 与流控状态(暂停 / 级别),
-// 经累加器把内核的原生日志批次组装进 logs ref。
+// 组装层 · logs 门面。持有完整的 logs ref 与流控状态(暂停 / 来源区分),
+// 只接一条流：面板后端转发的内核进程 stdout/stderr(SSE)。
 // store 直接引用这里导出的 logs / initLogs,不再参与组装。
-import { can, core, Core } from '@/assembly/backend'
-import { LOG_LEVEL } from '@/constant'
-import { useStorage } from '@/helper/storage'
 import type { LogWithSeq } from '@/types'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { createLogsAccumulator } from './accumulator'
-import * as clash from './clash'
+import * as service from './service'
 
 export const logs = shallowRef<LogWithSeq[]>([])
 export const isPaused = ref(false)
-export const logLevel = useStorage<string>('config/log-level', LOG_LEVEL.Info)
 
-// 各内核认的 /logs?level= 取值不同(mihomo 无 trace,honk 无 silent),
-// 传了不认的级别会被直接 400,WS 随后陷入无限重连,所以逐档按能力表拼。
-export const supportedLogLevels = computed(() => {
-  const levels = [LOG_LEVEL.Debug, LOG_LEVEL.Info, LOG_LEVEL.Warning, LOG_LEVEL.Error]
+// 这一条流里其实有两种行：内核自己打的运行日志(以前那条 Clash WS 给的就是这些),
+// 和进程的其余原始输出 —— Go 的 panic 栈、启动前的裸 stderr。WS 是它的子集,所以不
+// 再单独走一条通道,只把区分留在日志页的过滤里。
+export const LOG_ORIGINS = ['kernel', 'process'] as const
+export type LogOrigin = (typeof LOG_ORIGINS)[number]
 
-  if (can('traceLogLevel')) levels.unshift(LOG_LEVEL.Trace)
-  if (can('silentLogLevel')) levels.push(LOG_LEVEL.Silent)
+// 「全部」下拉复用一个值域:来源那两项带前缀,免得与等级/类型同名撞车。
+export const originFilterValue = (origin: LogOrigin) => `origin:${origin}`
 
-  return levels
-})
+// 过滤下拉的选中项与一条日志是否匹配:来源比字段,等级/类型沿用原文匹配。
+export const matchesLogFilter = (log: LogWithSeq, filter: string) => {
+  if (!filter) return true
+  if (filter.startsWith('origin:')) return originFilterValue(log.origin) === filter
 
-// logLevel 是跨会话持久化的,换到不认该级别的内核后必须退档,否则流永远起不来。
-// 内核还没探测出结论(Core.Unknown)时不动它 —— 那时候的能力表还不是最终答案。
-watch(supportedLogLevels, (levels) => {
-  if (core.value === Core.Unknown) return
-  if (levels.includes(logLevel.value as LOG_LEVEL)) return
-
-  logLevel.value = LOG_LEVEL.Info
-  if (cancel) initLogs()
-})
+  return log.payload.includes(filter) || log.type === filter
+}
 
 let cancel: (() => void) | undefined
 
+// 一次页面加载只开一条：这条流跟着面板后端而不是内核会话,内核启动/停掉都不重开它 ——
+// 起来那几行与挂掉那几行正是同一屏要对着看的东西,重开只会把 seq 打回 1。
 export const initLogs = () => {
-  stopLogs()
+  if (cancel) return
 
   const accumulator = createLogsAccumulator(logs, () => isPaused.value)
-  const subscription = clash.subscribeLogs({ level: logLevel.value }, accumulator.push)
-
+  const subscription = service.subscribeServiceLogs(accumulator.push)
   cancel = () => {
     accumulator.dispose()
     subscription.close()
+    cancel = undefined
   }
-}
-
-// 结束流时一并丢掉日志。日志形态在累加器里已经归一化,不会像连接那样把渲染打崩
-// (见 store/connections),但把上一个内核的日志留在屏幕上同样是错的 —— 新内核
-// 连不上时,它们会一直冒充新内核的日志。
-export const stopLogs = () => {
-  cancel?.()
-  cancel = undefined
-  logs.value = []
 }

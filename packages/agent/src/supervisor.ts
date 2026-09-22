@@ -50,6 +50,9 @@ const VALIDATE_KILL_GRACE_MS = 5_000
 // already reaped (win32 taskkill on a vanished process) never emits 'exit'.
 const STOP_KILL_GRACE_MS = 5_000
 
+// 服务日志历史的默认条数。
+const DEFAULT_LOG_HISTORY = 500
+
 export function createSupervisor(
   opts: CreateSupervisorOptions,
   deps: SupervisorDeps = {},
@@ -76,6 +79,7 @@ export function createSupervisor(
   const maxRestarts = opts.maxRestarts ?? 3
   const restartBackoffMs = opts.restartBackoffMs ?? 1_000
   const stableRestartMs = opts.stableRestartMs ?? 30_000
+  const logHistoryLimit = opts.logHistorySize ?? DEFAULT_LOG_HISTORY
 
   const state: KernelState = {
     status: 'stopped',
@@ -86,6 +90,11 @@ export function createSupervisor(
 
   const logCbs = new Set<(l: KernelLogLine) => void>()
   const stateCbs = new Set<(s: KernelState) => void>()
+  // 内核进程的输出是「服务日志」的唯一来源，而它只在启动/重启那几秒最关键：
+  // yaml 有问题时 mihomo 把报错打到 stderr 就退出，等面板上的 SSE 连上来时早就过去了。
+  // 所以留一段定长历史，新订阅者先补历史再收实时行。故意不按 restart 清空 ——
+  // 上一次启动为什么失败正是这里要回答的问题。
+  const logHistory: KernelLogLine[] = []
   let child: ChildProcess | undefined
   // Mutable so the kernel binary can be swapped at runtime (takes effect on the
   // next start/validate spawn — the live process keeps the path it was started with).
@@ -110,12 +119,18 @@ export function createSupervisor(
     for (const cb of stateCbs) cb(snapshot)
   }
 
+  function emitLine(stream: 'stdout' | 'stderr', line: string): void {
+    const l: KernelLogLine = { stream, line, ts: now() }
+    logHistory.push(l)
+    if (logHistory.length > logHistoryLimit) logHistory.shift()
+    for (const cb of logCbs) cb(l)
+  }
+
   function emitLines(stream: 'stdout' | 'stderr', chunk: Buffer): void {
     const text = chunk.toString('utf8')
     for (const line of text.split('\n')) {
       if (line.length === 0) continue
-      const l: KernelLogLine = { stream, line, ts: now() }
-      for (const cb of logCbs) cb(l)
+      emitLine(stream, line)
     }
   }
 
@@ -357,6 +372,9 @@ export function createSupervisor(
     getControllerSecret() {
       return controllerSecret
     },
+    getRecentLogs() {
+      return logHistory.slice()
+    },
     start() {
       return run(doStart)
     },
@@ -386,8 +404,14 @@ export function createSupervisor(
       return new Promise((resolve) => {
         const proc = spawn(binaryPath, ['-t', '-d', homeDir, '-f', configPath])
         let out = ''
-        proc.stdout?.on('data', (c: Buffer) => (out += c.toString()))
-        proc.stderr?.on('data', (c: Buffer) => (out += c.toString()))
+        // 探针的每一行同时进服务日志缓冲：校验是一次性子进程，报错只活在这几毫秒里，
+        // 不落历史的话面板上永远看不到「应用配置为什么被 400 掉」。
+        const collect = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
+          out += chunk.toString()
+          emitLines(stream, chunk)
+        }
+        proc.stdout?.on('data', collect('stdout'))
+        proc.stderr?.on('data', collect('stderr'))
 
         let settled = false
         // finish() 读 timeoutHandle、超时回调又调 finish(),二者互相引用,
@@ -418,6 +442,7 @@ export function createSupervisor(
           // exit synchronously, and that exit must still report timeout rather
           // than turn SIGKILL's exit code into a validation verdict.
           timedOut = true
+          emitLine('stderr', `validate timeout after ${validateTimeoutMs}ms`)
           if (!proc.pid) {
             finish(timeoutResult())
             return
@@ -437,7 +462,24 @@ export function createSupervisor(
           }
         }, validateTimeoutMs)
         proc.on('exit', (code: number | null) => {
-          finish(timedOut ? timeoutResult() : { valid: code === 0, message: out.trim() })
+          if (timedOut || code === 0) {
+            finish(timedOut ? timeoutResult() : { valid: true, message: out.trim() })
+            return
+          }
+          const detail = out.trim()
+          if (detail !== '') {
+            // 内核那句「… test failed」是裸 stdout，行里没有 level=，面板只能按通道兜底
+            // 标成 info；退出码才是这次校验的结论，所以补一行 stderr 判决，日志页上才有
+            // 一行红的 ERROR 直接指着这次失败。
+            emitLine('stderr', `config validation failed (exit code ${code ?? 'a signal'})`)
+            finish({ valid: false, message: detail })
+            return
+          }
+          // 一个字没吐就退了（被 OOM 掉、二进制自己 abort 之类）：补一行进日志，
+          // 否则面板上是一个连错误信息都没有的 400。
+          const message = `validation exited with ${code ?? 'a signal'} and produced no output`
+          emitLine('stderr', message)
+          finish({ valid: false, message })
         })
         proc.on('error', (err: Error) => {
           finish(timedOut ? timeoutResult() : { valid: false, message: err.message })

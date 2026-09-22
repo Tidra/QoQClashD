@@ -13,7 +13,7 @@ import { SubscriptionFetchError } from './profiles'
 import type { PanelAuth } from './session'
 import { createSessionManager } from './session'
 import { TunPreconditionError } from './tun'
-import type { KernelDownloadProgress, KernelState, ProfileMeta } from './types'
+import type { KernelDownloadProgress, KernelLogLine, KernelState, ProfileMeta } from './types'
 
 function fakeState(over: Partial<KernelState> = {}): KernelState {
   return {
@@ -39,6 +39,7 @@ function makeDeps(token?: string) {
   const supervisor = {
     getState: vi.fn(() => state),
     getControllerSecret: vi.fn(() => 'sek'),
+    getRecentLogs: vi.fn(() => [] as KernelLogLine[]),
     start: vi.fn(async () => fakeState({ status: 'running', pid: 1, version: '1.19.27' })),
     stop: vi.fn(async () => fakeState({ status: 'stopped' })),
     restart: vi.fn(async () => fakeState({ status: 'running', pid: 2 })),
@@ -722,13 +723,18 @@ describe('createControlRouter — profiles + SSE', () => {
     })
   })
 
-  it('gET /api/control/kernel/logs streams text/event-stream and pushes a state event', async () => {
+  it('gET /api/control/kernel/logs replays buffered lines, then streams live ones', async () => {
     const deps = makeDeps()
     // Capture the registered 'log' callback so we can drive a fake log line.
     let logCb: ((l: { stream: string; line: string; ts: number }) => void) | undefined
     deps.supervisor.on = vi.fn((event: string, cb: never) => {
       if (event === 'log') logCb = cb as never
     }) as never
+    // 启动失败那几行在内核退出后就再也不会自己冒出来，只能靠这段重放。
+    deps.supervisor.getRecentLogs = vi.fn(() => [
+      { stream: 'stderr', line: 'bad-yaml-1', ts: 1 },
+      { stream: 'stderr', line: 'bad-yaml-2', ts: 2 },
+    ])
     srv = await mount(deps)
 
     const res = await fetch(`${srv.base}/api/control/kernel/logs`)
@@ -736,13 +742,17 @@ describe('createControlRouter — profiles + SSE', () => {
 
     const reader = res.body!.getReader()
     const dec = new TextDecoder()
-    // First chunk should be the seeded state event.
-    const first = await reader.read()
-    const seeded = dec.decode(first.value)
-    expect(seeded).toContain('"type":"state"')
+    let acc = ''
+    for (let i = 0; i < 4 && !acc.includes('"type":"state"'); i++) {
+      acc += dec.decode((await reader.read()).value)
+    }
+    // 历史先于实时的兜底 state 帧，且保持旧 -> 新。
+    expect(acc.indexOf('bad-yaml-1')).toBeGreaterThanOrEqual(0)
+    expect(acc.indexOf('bad-yaml-1')).toBeLessThan(acc.indexOf('bad-yaml-2'))
+    expect(acc.indexOf('bad-yaml-2')).toBeLessThan(acc.indexOf('"type":"state"'))
 
     // Drive a log line through the captured callback and read the next chunk.
-    logCb?.({ stream: 'stdout', line: 'hello-from-kernel', ts: 1 })
+    logCb?.({ stream: 'stdout', line: 'hello-from-kernel', ts: 3 })
     const next = await reader.read()
     expect(dec.decode(next.value)).toContain('hello-from-kernel')
 

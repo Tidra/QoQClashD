@@ -60,6 +60,8 @@ export interface SupervisorOptions {
   maxRestarts?: number // consecutive auto-restarts before giving up; default 3
   restartBackoffMs?: number // delay before each auto-restart; default 1_000
   stableRestartMs?: number // running this long resets the crash counter; default 30_000
+  // 保留多少行内核 stdout/stderr 供新订阅者重放; default 500
+  logHistorySize?: number
 }
 
 export interface KernelLogLine {
@@ -74,6 +76,9 @@ export interface MihomoSupervisor {
   // 序列化下发，留在这里就只能靠「记得脱敏」；同源的 /api/mihomo 代理自己注
   // Authorization，面板只需要 secretSet 这一个布尔。
   getControllerSecret: () => string
+  // 缓冲内的内核进程输出（旧→新）。SSE 订阅者连上来先重放这段，否则启动失败那
+  // 几秒的报错永远只存在于没有人看的时候。
+  getRecentLogs: () => KernelLogLine[]
   start: () => Promise<KernelState>
   stop: () => Promise<KernelState>
   restart: () => Promise<KernelState>

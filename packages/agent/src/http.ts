@@ -473,8 +473,14 @@ export function createControlRouter(deps: ControlRouterDeps): App {
       const stream = createEventStream(event)
       const onLog = (l: KernelLogLine) => stream.push(JSON.stringify({ type: 'log', ...l }))
       const onState = (s: KernelState) => stream.push(JSON.stringify({ type: 'state', ...s }))
+      // 挂回调与重放之间没有任何 await，同一 tick 内不可能插进新行，所以既不丢
+      // 也不重。反过来先重放再挂回调就会漏掉这一瞬间内核刚打出来的报错。
       supervisor.on('log', onLog)
       supervisor.on('state', onState)
+      // 面板连上来时启动失败早过去了，先把它错过的历史补给它。
+      for (const l of supervisor.getRecentLogs()) {
+        stream.push(JSON.stringify({ type: 'log', ...l }))
+      }
       // Detach on disconnect. Without this, every EventSource reconnect
       // (navigation, kernel restart, network blip, HMR) permanently adds two
       // more closures to the supervisor's callback sets — an unbounded leak on

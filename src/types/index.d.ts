@@ -174,6 +174,12 @@ export type Connection = ConnectionRawMessage & {
 export type Log = {
   type: LOG_LEVEL
   payload: string
+  // 这一条流里的两种行：kernel = 内核自己打的运行日志（带 level= 与 msg= 的那些），
+  // process = 其余原始进程输出（Go 的 panic 栈、启动前的裸 stderr）。日志页按它过滤。
+  origin: 'kernel' | 'process'
+  // 来源自带时间戳时填（服务日志重放的是缓冲里的历史行，落表时刻晚于发生时刻），
+  // 缺省由累加器按当下时间补。
+  time?: string
 }
 
 export type LogWithSeq = Log & { seq: number; time: string }

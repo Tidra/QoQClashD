@@ -11,6 +11,7 @@ import { kernelDownloading } from '@/helper/kernelDownload'
 import { getAuthStatus } from '@/helper/panelSession'
 import { whenStorageReady } from '@/helper/storage'
 import router from '@/router'
+import { initLogs } from '@/store/logs'
 
 const KERNEL_WAIT_TIMEOUT = 15000
 
@@ -102,6 +103,9 @@ const runKernelBootstrap = async () => {
   if (!authenticated) return
 
   bootstrapped = true
+  // 日志跟着面板后端而不是内核会话，所以不管内核在不在跑都只在这里开一次 ——
+  // yaml 报错时内核根本起不来，而那条流偏偏是这一屏最要看的东西。
+  initLogs()
   if ((await getKernelStatusSafe())?.status === 'running') {
     startKernelSession()
     return
@@ -120,7 +124,7 @@ export const bootstrapKernelSession = () => {
 /**
  * 回到前台时确认内核还活着。
  *
- * 息屏 / 切走期间内核可能被停掉或随机器睡眠一起没了。三条常驻流只会对着死端口无限
+ * 息屏 / 切走期间内核可能被停掉或随机器睡眠一起没了。两条数据流只会对着死端口无限
  * 重连，用户需要的是启动入口而不是转圈的表格。
  */
 export const resumeKernelSession = async () => {
