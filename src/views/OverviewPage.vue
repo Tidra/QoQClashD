@@ -94,7 +94,7 @@ import { activeConnections } from '@/store/connections'
 import { overviewCardOrder } from '@/store/settings'
 import type { Component } from 'vue'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -128,7 +128,6 @@ const cardComponents: Record<string, Component> = {
   NetworkCard,
   ProviderTrafficOverview,
   TopologyCharts,
-  EarthGlobeCard: defineAsyncComponent(() => import('@/components/overview/EarthGlobeCard.vue')),
   ConnectionHistory,
   RuleHitCountCard,
   HonkStatsCard,

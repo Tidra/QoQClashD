@@ -6,6 +6,7 @@ import { ref } from 'vue'
 export {
   initLogs,
   isPaused,
+  LOG_ORIGIN_LABEL_KEYS,
   LOG_ORIGINS,
   logs,
   matchesLogFilter,

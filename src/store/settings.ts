@@ -26,7 +26,7 @@ import {
   TEST_URL,
   type THEME,
 } from '@/constant'
-import { useStorage } from '@/helper/storage'
+import { useStorage, whenStorageReady } from '@/helper/storage'
 import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
 import { computed } from 'vue'
@@ -169,10 +169,6 @@ const defaultOverviewCardOrder: { card: OVERVIEW_CARD; visible: boolean }[] = [
     visible: true,
   },
   {
-    card: OVERVIEW_CARD.EarthGlobeCard,
-    visible: true,
-  },
-  {
     card: OVERVIEW_CARD.TopologyCharts,
     visible: true,
   },
@@ -199,32 +195,24 @@ export const overviewCardOrder = useStorage<{ card: OVERVIEW_CARD; visible: bool
   defaultOverviewCardOrder,
 )
 
-// 确保所有卡片都在配置中。存量配置首次补入全球连接时放在连接拓扑前；
-// 其他缺失卡片仍追加到末尾，已有全球连接的自定义顺序不改。
-const allCardTypes = Object.values(OVERVIEW_CARD)
-const existingCardTypes = new Set(overviewCardOrder.value.map((item) => item.card))
-const missingCards = allCardTypes.filter((card) => !existingCardTypes.has(card))
+// 卡片清单以代码为准：存量配置里已经删掉的卡片要清掉（留着只会剩一行没标题的空开关），
+// 代码里新增的卡片补到末尾。首帧读到的还是默认值，真值得等水合，所以清理排在门控之后；
+// 两边都没差时不写回，免得每次加载都碰一次 KV。
+const syncOverviewCardOrder = () => {
+  const allCardTypes = Object.values(OVERVIEW_CARD)
+  const knownCards = new Set<string>(allCardTypes)
+  const keptCards = overviewCardOrder.value.filter((item) => knownCards.has(item.card))
+  const missingCards = allCardTypes.filter((card) => !keptCards.some((item) => item.card === card))
 
-if (missingCards.length > 0) {
-  const nextOrder = [...overviewCardOrder.value]
-
-  for (const card of missingCards) {
-    const item = { card, visible: true }
-
-    if (card === OVERVIEW_CARD.EarthGlobeCard) {
-      const topologyIndex = nextOrder.findIndex(({ card }) => card === OVERVIEW_CARD.TopologyCharts)
-      nextOrder.splice(topologyIndex === -1 ? nextOrder.length : topologyIndex, 0, item)
-    } else {
-      nextOrder.push(item)
-    }
+  if (keptCards.length !== overviewCardOrder.value.length || missingCards.length > 0) {
+    overviewCardOrder.value = [
+      ...keptCards,
+      ...missingCards.map((card) => ({ card, visible: true })),
+    ]
   }
-
-  overviewCardOrder.value = nextOrder
 }
+void whenStorageReady().then(syncOverviewCardOrder)
 
-export const earthIPInfoAPI = useStorage<IP_INFO_API>('config/earth-ip-info-api', IP_INFO_API.IPIP)
-export const earthVisualMode = useStorage<'flat' | 'space'>('config/earth-visual-mode', 'flat')
-export const earthProjection = useStorage<'3d' | '2d'>('config/earth-projection', '3d')
 export const topologyApplyConnectionFilter = useStorage(
   'config/topology-apply-connection-filter',
   true,

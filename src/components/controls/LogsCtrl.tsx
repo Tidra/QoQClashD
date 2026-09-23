@@ -3,6 +3,7 @@ import { LIST_DISPLAY_STYLE, LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
   isPaused,
+  LOG_ORIGIN_LABEL_KEYS,
   LOG_ORIGINS,
   logFilter,
   logFilterEnabled,
@@ -135,10 +136,10 @@ export default defineComponent({
           onUpdate:modelValue={(value) => (logTypeFilter.value = value as string)}
           options={[
             { value: '', label: t('all') },
-            // 一条流里两种行，所以「看哪种」是过滤而不是换通道。
+            // 一条流里三种行，所以「看哪种」是过滤而不是换通道。
             ...LOG_ORIGINS.map((value) => ({
               value: originFilterValue(value),
-              label: t(value === 'kernel' ? 'kernelLogs' : 'serviceLogs'),
+              label: t(LOG_ORIGIN_LABEL_KEYS[value]),
               group: t('logOrigin'),
             })),
             ...logFilterOptions.value.levels.map((value) => ({

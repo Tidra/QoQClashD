@@ -57,7 +57,6 @@ const soft = computed(() => {
     coreRestart: mihomoOrForkCore,
     reloadConfigs: mihomoOrForkCore,
     updateConfigs: mihomoOrForkCore,
-    updateGeoDatabase: mihomoOrForkCore,
     independentLatency: mihomoOrForkCore,
     coreUpdateCheck: mihomo,
     // ports / tun / allow-lan 等 PATCH /configs 配置块。

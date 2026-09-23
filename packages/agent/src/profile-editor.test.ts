@@ -19,6 +19,7 @@ function supervisor(restart = vi.fn(async () => state())): MihomoSupervisor {
     getState: state,
     getControllerSecret: () => '',
     getRecentLogs: () => [],
+    appendLog: vi.fn(),
     start: vi.fn(async () => state()),
     stop: vi.fn(async () => state()),
     restart,

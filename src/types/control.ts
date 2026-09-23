@@ -147,11 +147,23 @@ export interface KernelVersions {
   bundled: string
 }
 
-// POST /api/control/geo/update (capability-gated 'geo-assets'). Downloads the
-// geoip/geosite/mmdb databases into the kernel home dir (SHARED CONTRACTS).
+// POST /api/control/geo/update. Downloads the geoip/geosite/mmdb databases into
+// the kernel home dir itself — no core involved. Failures come back as
+// { ok:false, error } on a 200 (SHARED CONTRACTS).
 export interface GeoUpdateResult {
   ok: boolean
-  files: string[]
+  files?: string[]
+  error?: string
+}
+
+// POST /api/control/rulesets/update { name }. Fetches that drafted rule-provider's
+// url onto its drafted path under the kernel home dir, again without the core.
+// Business failures come back as { ok:false, error } on a 200 (SHARED CONTRACTS).
+export interface RuleSetUpdateResult {
+  ok: boolean
+  error?: string
+  name?: string
+  path?: string
 }
 
 // GET/POST /api/control/tun (capability-gated 'tun'). Mirror of @metacubexd/agent

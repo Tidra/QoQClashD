@@ -20,6 +20,16 @@ export default defineConfig({
       '/api/control': {
         target: 'http://127.0.0.1:5174',
         changeOrigin: true,
+        // 浏览器断开时 http-proxy 不会撤上游，面板刷一下页，agent 那趟长下载照样跑到底
+        // —— 而 agent 判「面板已断开」靠的正是上游 socket 关闭。生产是同进程直挂，
+        // 没这层代理，所以只有开发模式下需要补这一刀。
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, _req, res) => {
+            res.once('close', () => {
+              if (!res.writableEnded) proxyReq.destroy()
+            })
+          })
+        },
       },
       '/api/mihomo': {
         target: 'http://127.0.0.1:5174',

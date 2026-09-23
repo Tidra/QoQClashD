@@ -6,7 +6,13 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import treeKillDefault from 'tree-kill'
 import { parse } from 'yaml'
-import type { KernelLogLine, KernelState, MihomoSupervisor, SupervisorOptions } from './types'
+import type {
+  KernelLogLine,
+  KernelLogSource,
+  KernelState,
+  MihomoSupervisor,
+  SupervisorOptions,
+} from './types'
 
 export interface SupervisorDeps {
   spawn?: (cmd: string, args: string[], opts?: object) => ChildProcess
@@ -53,6 +59,25 @@ const STOP_KILL_GRACE_MS = 5_000
 // 服务日志历史的默认条数。
 const DEFAULT_LOG_HISTORY = 500
 
+// 校验探针的原始输出里，最能说明问题的一般是 logrus 那行 `level=error msg="…"`；
+// 但它一个字都不会进日志 —— 一次校验只留一行判决（见 validate()）。所以判决必须自己
+// 把原因带出来，否则日志页上就是一行没有信息量的「检验失败」。
+const LEVELLED_LOG = /(?:^|\s)level=(?:error|fatal|panic|warning)(?:\s|$)/
+const LOG_MSG = /(?:^|\s)msg="((?:[^"\\]|\\.)*)"(?:\s|$)/
+const REASON_MAX = 240
+
+function probeFailureReason(raw: string): string {
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  if (lines.length === 0) return ''
+  const picked = lines.find((line) => LEVELLED_LOG.test(line)) ?? lines[0]!
+  const msg = LOG_MSG.exec(picked)?.[1]?.replace(/\\(["\\])/g, '$1')
+  const reason = (msg ?? picked).replace(/\s+/g, ' ')
+  return reason.length > REASON_MAX ? `${reason.slice(0, REASON_MAX)}…` : reason
+}
+
 export function createSupervisor(
   opts: CreateSupervisorOptions,
   deps: SupervisorDeps = {},
@@ -90,10 +115,10 @@ export function createSupervisor(
 
   const logCbs = new Set<(l: KernelLogLine) => void>()
   const stateCbs = new Set<(s: KernelState) => void>()
-  // 内核进程的输出是「服务日志」的唯一来源，而它只在启动/重启那几秒最关键：
+  // 服务日志的历史缓冲。内核进程的输出是它最主要的来源，而它只在启动/重启那几秒最关键：
   // yaml 有问题时 mihomo 把报错打到 stderr 就退出，等面板上的 SSE 连上来时早就过去了。
   // 所以留一段定长历史，新订阅者先补历史再收实时行。故意不按 restart 清空 ——
-  // 上一次启动为什么失败正是这里要回答的问题。
+  // 上一次启动为什么失败正是这里要回答的问题。面板后端自己的动作（资源下载）也追加到这里。
   const logHistory: KernelLogLine[] = []
   let child: ChildProcess | undefined
   // Mutable so the kernel binary can be swapped at runtime (takes effect on the
@@ -119,8 +144,8 @@ export function createSupervisor(
     for (const cb of stateCbs) cb(snapshot)
   }
 
-  function emitLine(stream: 'stdout' | 'stderr', line: string): void {
-    const l: KernelLogLine = { stream, line, ts: now() }
+  function emitLine(stream: 'stdout' | 'stderr', line: string, source?: KernelLogSource): void {
+    const l: KernelLogLine = { stream, line, ts: now(), ...(source ? { source } : {}) }
     logHistory.push(l)
     if (logHistory.length > logHistoryLimit) logHistory.shift()
     for (const cb of logCbs) cb(l)
@@ -375,6 +400,9 @@ export function createSupervisor(
     getRecentLogs() {
       return logHistory.slice()
     },
+    appendLog(line, init) {
+      emitLine(init?.stream ?? 'stdout', line, init?.source)
+    },
     start() {
       return run(doStart)
     },
@@ -404,14 +432,14 @@ export function createSupervisor(
       return new Promise((resolve) => {
         const proc = spawn(binaryPath, ['-t', '-d', homeDir, '-f', configPath])
         let out = ''
-        // 探针的每一行同时进服务日志缓冲：校验是一次性子进程，报错只活在这几毫秒里，
-        // 不落历史的话面板上永远看不到「应用配置为什么被 400 掉」。
-        const collect = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
+        // 探针的原始输出只往 out 里攒，一行都不进日志缓冲：一次校验在服务日志里就是
+        // 一行结论。逐行转发会变成「裸 stdout 的 … test failed 标成 info，判决标成
+        // error」两行自我重复，而这两行的原因本来就都在判决那行里。
+        const collect = (chunk: Buffer) => {
           out += chunk.toString()
-          emitLines(stream, chunk)
         }
-        proc.stdout?.on('data', collect('stdout'))
-        proc.stderr?.on('data', collect('stderr'))
+        proc.stdout?.on('data', collect)
+        proc.stderr?.on('data', collect)
 
         let settled = false
         // finish() 读 timeoutHandle、超时回调又调 finish(),二者互相引用,
@@ -426,6 +454,10 @@ export function createSupervisor(
             valid: false,
             message: `validate timeout after ${validateTimeoutMs}ms${detail ? `\n${detail}` : ''}`,
           }
+        }
+        const validateTimeoutLine = () => {
+          const reason = probeFailureReason(out)
+          return `validate timeout after ${validateTimeoutMs}ms${reason ? `: ${reason}` : ''}`
         }
         const finish = (result: { valid: boolean; message: string }) => {
           if (settled) return false
@@ -442,7 +474,7 @@ export function createSupervisor(
           // exit synchronously, and that exit must still report timeout rather
           // than turn SIGKILL's exit code into a validation verdict.
           timedOut = true
-          emitLine('stderr', `validate timeout after ${validateTimeoutMs}ms`)
+          emitLine('stderr', validateTimeoutLine())
           if (!proc.pid) {
             finish(timeoutResult())
             return
@@ -462,16 +494,25 @@ export function createSupervisor(
           }
         }, validateTimeoutMs)
         proc.on('exit', (code: number | null) => {
-          if (timedOut || code === 0) {
-            finish(timedOut ? timeoutResult() : { valid: true, message: out.trim() })
+          if (timedOut) {
+            // 判决行已由超时回调发出去了，这里只负责释放调用方。
+            finish(timeoutResult())
+            return
+          }
+          if (code === 0) {
+            emitLine('stdout', 'config validation passed')
+            finish({ valid: true, message: out.trim() })
             return
           }
           const detail = out.trim()
           if (detail !== '') {
-            // 内核那句「… test failed」是裸 stdout，行里没有 level=，面板只能按通道兜底
-            // 标成 info；退出码才是这次校验的结论，所以补一行 stderr 判决，日志页上才有
-            // 一行红的 ERROR 直接指着这次失败。
-            emitLine('stderr', `config validation failed (exit code ${code ?? 'a signal'})`)
+            // 退出码才是这次校验的结论，所以补一行 stderr 判决；原因跟在后面，
+            // 这样日志页那一行红的自己就说得清这次 400 是为了什么。
+            const reason = probeFailureReason(detail)
+            emitLine(
+              'stderr',
+              `config validation failed (exit code ${code ?? 'a signal'})${reason ? `: ${reason}` : ''}`,
+            )
             finish({ valid: false, message: detail })
             return
           }
@@ -482,6 +523,9 @@ export function createSupervisor(
           finish({ valid: false, message })
         })
         proc.on('error', (err: Error) => {
+          // spawn 直接失败（二进制不存在、没有执行权限）不会有 exit 事件，
+          // 不在这里留一行的话日志上就是一次什么都不发生的「应用配置」。
+          if (!timedOut) emitLine('stderr', `config validation could not run: ${err.message}`)
           finish(timedOut ? timeoutResult() : { valid: false, message: err.message })
         })
       })

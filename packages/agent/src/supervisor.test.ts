@@ -604,7 +604,7 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(r.message).toContain('parse error')
   })
 
-  it('feeds the validate probe output into the log history so a 400 is explainable', async () => {
+  it('leaves exactly one log line for a failed validation, carrying the probe reason', async () => {
     const opts = baseOpts()
     const proc = new FakeProc()
     const sup = createSupervisor(opts, {
@@ -614,18 +614,58 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     const logs: string[] = []
     sup.on('log', (l) => logs.push(`${l.stream}:${l.line}`))
     const p = sup.validate(opts.activeConfigPath)
+    // 探针自己打了两行（一行的 level=info、一行的 level=fatal），日志页上仍然只有一行：
+    // 逐行转发的话「裸 stdout 的 … test failed 标成 info + 判决标成 error」就是两行
+    // 自我重复，而原因已经收进判决那一行了。
     proc.stdout.emit('data', Buffer.from('time="x" level=info msg="config load"\n'))
     proc.stderr.emit('data', Buffer.from('time="x" level=fatal msg="Parse config error: bad"\n'))
+    proc.stdout.emit('data', Buffer.from('configuration file /x/active.yaml test failed\n'))
     proc.emitExit(1, null)
     await p
-    // 最后一行是 supervisor 自己补的判决：内核那句 "... test failed" 是裸 stdout，
-    // 面板按通道只能标成 info，退出码才是这次校验的结论。
-    expect(logs).toEqual([
-      'stdout:time="x" level=info msg="config load"',
-      'stderr:time="x" level=fatal msg="Parse config error: bad"',
-      'stderr:config validation failed (exit code 1)',
-    ])
+    expect(logs).toEqual(['stderr:config validation failed (exit code 1): Parse config error: bad'])
     expect(sup.getRecentLogs().map((l) => `${l.stream}:${l.line}`)).toEqual(logs)
+  })
+
+  it('puts a yaml parse error in the verdict line, not just in the probe stdout', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    sup.on('log', () => {})
+    const p = sup.validate(opts.activeConfigPath)
+    // mihomo -t 对不合法 YAML 的真实输出：logrus 一行 + 收尾一句裸 stdout，都在 stdout。
+    proc.stdout.emit(
+      'data',
+      Buffer.from(
+        'time="2026-09-23T21:32:06+08:00" level=error msg="yaml: line 2: did not find expected node content"\n' +
+          'configuration file D:/config/active.yaml test failed\n',
+      ),
+    )
+    proc.emitExit(1, null)
+    await p
+    const verdict = sup.getRecentLogs().at(-1)!
+    expect(verdict.stream).toBe('stderr')
+    expect(verdict.line).toBe(
+      'config validation failed (exit code 1): yaml: line 2: did not find expected node content',
+    )
+  })
+
+  it('keeps the raw line as the reason when the probe prints nothing levelled', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    const p = sup.validate(opts.activeConfigPath)
+    proc.stdout.emit('data', Buffer.from('configuration file /x/active.yaml test failed\n'))
+    proc.emitExit(1, null)
+    await p
+    expect(sup.getRecentLogs().at(-1)!.line).toBe(
+      'config validation failed (exit code 1): configuration file /x/active.yaml test failed',
+    )
   })
 
   it('synthesizes a log line when the probe dies without output', async () => {
@@ -641,6 +681,43 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(r.valid).toBe(false)
     expect(r.message).toContain('no output')
     expect(sup.getRecentLogs().map((l) => l.line)).toEqual([r.message])
+  })
+
+  it('logs one line for a passing validation and none of the probe output', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    const p = sup.validate(opts.activeConfigPath)
+    proc.stdout.emit(
+      'data',
+      Buffer.from(
+        'Configuration file D:/config/active.yaml is OK\n' + 'time="x" level=info msg="y"\n',
+      ),
+    )
+    proc.emitExit(0, null)
+    await expect(p).resolves.toMatchObject({ valid: true })
+    expect(sup.getRecentLogs().map((l) => `${l.stream}:${l.line}`)).toEqual([
+      'stdout:config validation passed',
+    ])
+  })
+
+  it('logs a line when the probe cannot even be spawned', async () => {
+    const opts = baseOpts()
+    const proc = new FakeProc()
+    const sup = createSupervisor(opts, {
+      spawn: (() => proc) as never,
+      fetch: ready200(),
+    })
+    const p = sup.validate(opts.activeConfigPath)
+    proc.emit('error', new Error('ENOENT: no such file or directory, spawn mihomo'))
+    const r = await p
+    expect(r.valid).toBe(false)
+    expect(sup.getRecentLogs().map((l) => l.line)).toEqual([
+      'config validation could not run: ENOENT: no such file or directory, spawn mihomo',
+    ])
   })
 
   it('gives sequential first-run GEO downloads a 300s validation window (#2118, #2121)', async () => {
@@ -698,10 +775,10 @@ describe('createSupervisor — stop / restart / tree-kill / mutex', () => {
     expect(validation.valid).toBe(false)
     expect(validation.message).toContain('validate timeout after 25ms')
     expect(validation.message).toContain('GeoIP.dat')
-    // 超时也是结论：探针自己的行没有级别，日志页要有一行 stderr 的判决指着它。
+    // 超时也是结论，并且是这趟校验留在日志里的唯一一行：把它卡在哪一步（这里是 GEO
+    // 首次下载）一起带出来，探针自己的原始行不外发。
     expect(sup.getRecentLogs().map((l) => `${l.stream}:${l.line}`)).toEqual([
-      "stderr:Can't find GeoIP.dat, start download",
-      'stderr:validate timeout after 25ms',
+      "stderr:validate timeout after 25ms: Can't find GeoIP.dat, start download",
     ])
   })
 

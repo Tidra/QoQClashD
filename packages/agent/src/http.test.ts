@@ -1,6 +1,6 @@
 import { toNodeListener } from 'h3'
 import { Buffer } from 'node:buffer'
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -40,6 +40,7 @@ function makeDeps(token?: string) {
     getState: vi.fn(() => state),
     getControllerSecret: vi.fn(() => 'sek'),
     getRecentLogs: vi.fn(() => [] as KernelLogLine[]),
+    appendLog: vi.fn(),
     start: vi.fn(async () => fakeState({ status: 'running', pid: 1, version: '1.19.27' })),
     stop: vi.fn(async () => fakeState({ status: 'stopped' })),
     restart: vi.fn(async () => fakeState({ status: 'running', pid: 2 })),
@@ -925,6 +926,145 @@ describe('createControlRouter — geo assets', () => {
     expect(requested).toHaveLength(3)
     const written = readdirSync(deps.homeDir)
     expect(written).toEqual(expect.arrayContaining(['geoip.dat', 'geosite.dat', 'country.mmdb']))
+    // 每一步都进服务日志（带 source:'asset'，日志页靠它分来源）：近 28 MB 在慢网络下
+    // 要跑十几分钟，没有这些行的话点完按钮什么也不动。
+    expect(deps.supervisor.appendLog.mock.calls.map(([line]) => line)).toEqual([
+      'GEO database: downloading geoip.dat, geosite.dat, country.mmdb',
+      expect.stringMatching(/^GEO database: geoip\.dat updated \([\d.]+ MB\)$/),
+      expect.stringMatching(/^GEO database: geosite\.dat updated \([\d.]+ MB\)$/),
+      expect.stringMatching(/^GEO database: country\.mmdb updated \([\d.]+ MB\)$/),
+    ])
+    expect(deps.supervisor.appendLog).toHaveBeenLastCalledWith(expect.any(String), {
+      source: 'asset',
+    })
+  })
+
+  it('answers a failed geo download with { ok:false, error } instead of a 500', async () => {
+    const deps = {
+      ...makeDeps(),
+      geoFetch: vi.fn(async () => new Response('nope', { status: 502 })) as unknown as typeof fetch,
+    }
+    srv = await mount(deps as never)
+    const res = await fetch(`${srv.base}/api/control/geo/update`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(String((await res.json()).error)).toContain('502')
+    // 砸了要有一行 stderr，日志页才会红。
+    expect(deps.supervisor.appendLog).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^GEO database: download failed — /),
+      { stream: 'stderr', source: 'asset' },
+    )
+  })
+
+  it('stops the geo download when the panel hangs up, and says so in the log', async () => {
+    const upstream: { reject?: (err: unknown) => void } = {}
+    const deps = {
+      ...makeDeps(),
+      geoFetch: vi.fn(
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise<Response>((_, reject) => {
+            // 替身只模拟 undici 的一半：signal 一 abort，在途下载就抛 AbortError。
+            upstream.reject = reject
+            init?.signal?.addEventListener('abort', () =>
+              reject(
+                Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }),
+              ),
+            )
+          }),
+      ) as unknown as typeof fetch,
+    }
+    srv = await mount(deps as never)
+    const client = new AbortController()
+    const inflight = fetch(`${srv.base}/api/control/geo/update`, {
+      method: 'POST',
+      signal: client.signal,
+    }).catch(() => undefined)
+    await vi.waitFor(() => expect(deps.geoFetch).toHaveBeenCalled())
+
+    // 面板先挂断（超时、关页）：后端不能继续占着带宽，更不能在没人看着的时候换文件。
+    client.abort()
+    await inflight
+    await vi.waitFor(() =>
+      expect(deps.supervisor.appendLog).toHaveBeenLastCalledWith(
+        expect.stringContaining('cancelled'),
+        { source: 'asset' },
+      ),
+    )
+    expect(readdirSync(deps.homeDir)).toEqual([])
+  })
+})
+
+describe('createControlRouter — rule-set update', () => {
+  let srv: Awaited<ReturnType<typeof mount>>
+  afterEach(async () => srv?.close())
+
+  const draft = [
+    {
+      name: 'proxy',
+      type: 'http',
+      format: 'yaml',
+      url: 'https://example.com/proxy.yaml',
+      path: './ruleset/proxy.yaml',
+    },
+  ]
+
+  async function mountWithProviders(
+    providers: unknown,
+    geoFetch: (url: string) => Promise<Response>,
+  ) {
+    const deps = { ...makeDeps(), geoFetch: geoFetch as unknown as typeof fetch }
+    await deps.storage.set('config/routing-rule-providers', JSON.stringify(providers))
+    srv = await mount(deps as never)
+    return deps
+  }
+
+  it('pOST /api/control/rulesets/update writes the drafted url onto its path', async () => {
+    const requested: string[] = []
+    const deps = await mountWithProviders(draft, async (url) => {
+      requested.push(url)
+      return new Response(Buffer.from('new rules'), { status: 200 })
+    })
+
+    const res = await fetch(`${srv.base}/api/control/rulesets/update`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'proxy' }),
+    })
+    expect(res.status).toBe(200)
+    const dest = join(deps.homeDir, 'ruleset', 'proxy.yaml')
+    expect(await res.json()).toEqual({
+      ok: true,
+      name: 'proxy',
+      path: dest,
+      bytes: 'new rules'.length,
+    })
+    expect(requested).toEqual(['https://example.com/proxy.yaml'])
+    expect(readFileSync(dest, 'utf8')).toBe('new rules')
+    // 一行开始、一行结果，都带 source:'asset'；地址本身不进日志（可能带 token）。
+    expect(deps.supervisor.appendLog.mock.calls.map(([line]) => line)).toEqual([
+      'Rule-set "proxy": downloading',
+      `Rule-set "proxy": updated ${dest} (0.0 MB)`,
+    ])
+  })
+
+  it('answers with { ok:false, error } instead of throwing', async () => {
+    const deps = await mountWithProviders(draft, async () => {
+      throw new Error('unreachable')
+    })
+
+    for (const [body, message] of [
+      [{}, 'name is required'],
+      [{ name: 'nope' }, 'rule-set "nope" not found'],
+    ] as [Record<string, unknown>, string][]) {
+      const res = await fetch(`${srv.base}/api/control/rulesets/update`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).error).toContain(message)
+    }
+    // 校验挡在下载之前：这两种失败都不该碰磁盘。
+    expect(readdirSync(deps.homeDir)).not.toContain('ruleset')
   })
 })
 

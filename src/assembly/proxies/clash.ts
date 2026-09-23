@@ -116,13 +116,17 @@ export const fetchProxies = async () => {
   }
 }
 
+// 返回 true = 内核里这条组现在确实指向 proxyName（本来就在那，或刚切过去）。
+// 组还没进内核（新建/改名后尚未下发）时返回 false，调用方自己决定回落成「仅记草稿」。
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
   const proxyGroup = proxyMap.value[proxyGroupName]
 
-  if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return
+  if (!proxyGroup) return false
+  if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return false
+  // 重新拉取后要按新映射判断：proxyGroup 是拉取前那个旧对象引用，再读它的 now 恒等。
   if (proxyGroup.now === proxyName) {
     await fetchProxies()
-    if (proxyGroup.now === proxyName) return
+    if (proxyMap.value[proxyGroupName]?.now === proxyName) return true
   }
 
   await selectProxyAPI(proxyGroupName, proxyName)
@@ -135,6 +139,7 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
       .forEach((c) => disconnectByIdAPI(c.id).catch(() => {}))
   }
   fetchProxies()
+  return true
 }
 
 const getProviderNameByProxy = (proxyName: string) => {

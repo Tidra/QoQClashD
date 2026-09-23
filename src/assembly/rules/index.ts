@@ -46,6 +46,3 @@ export const toggleRuleDisabled = (rule: Rule, disabled: boolean) =>
   rule.uuid
     ? toggleRuleDisabledRefindAPI(rule.uuid)
     : toggleRuleDisabledAPI({ [rule.index]: disabled })
-
-// 规则集更新动作(Clash 专属),经 rules 域门面暴露给 view。
-export { updateRuleProviderAPI } from '@/api/clash'

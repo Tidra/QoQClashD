@@ -9,11 +9,19 @@ import * as service from './service'
 export const logs = shallowRef<LogWithSeq[]>([])
 export const isPaused = ref(false)
 
-// 这一条流里其实有两种行：内核自己打的运行日志(以前那条 Clash WS 给的就是这些),
-// 和进程的其余原始输出 —— Go 的 panic 栈、启动前的裸 stderr。WS 是它的子集,所以不
-// 再单独走一条通道,只把区分留在日志页的过滤里。
-export const LOG_ORIGINS = ['kernel', 'process'] as const
+// 这一条流里其实有三种行：内核自己打的运行日志(以前那条 Clash WS 给的就是这些),
+// 进程的其余原始输出(Go 的 panic 栈、一次校验的结论行),和面板后端自己的资源下载
+// (GEO / 规则集合)。WS 是内核日志的子集,所以不再单独走一条通道,只把区分留在日志页
+// 的过滤里。
+export const LOG_ORIGINS = ['kernel', 'process', 'asset'] as const
 export type LogOrigin = (typeof LOG_ORIGINS)[number]
+
+// 下拉里的文案键。收在这里是为了让视图只查表,而不是每加一种来源多一个分支。
+export const LOG_ORIGIN_LABEL_KEYS: Record<LogOrigin, string> = {
+  kernel: 'kernelLogs',
+  process: 'serviceLogs',
+  asset: 'assetLogs',
+}
 
 // 「全部」下拉复用一个值域:来源那两项带前缀,免得与等级/类型同名撞车。
 export const originFilterValue = (origin: LogOrigin) => `origin:${origin}`

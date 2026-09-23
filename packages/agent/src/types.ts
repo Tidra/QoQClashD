@@ -60,14 +60,20 @@ export interface SupervisorOptions {
   maxRestarts?: number // consecutive auto-restarts before giving up; default 3
   restartBackoffMs?: number // delay before each auto-restart; default 1_000
   stableRestartMs?: number // running this long resets the crash counter; default 30_000
-  // 保留多少行内核 stdout/stderr 供新订阅者重放; default 500
+  // 保留多少行服务日志（内核进程输出 + 面板后端自己的动作）供新订阅者重放; default 500
   logHistorySize?: number
 }
+
+// 一行服务日志的来源。缺省（不写这个字段）就是内核常驻进程的输出；面板后端自己
+// 做的事现在也进同一段历史，所以必须区分开，否则日志页只能靠「行里有没有 level=」
+// 猜，而资源下载这类行天生没有级别。
+export type KernelLogSource = 'asset'
 
 export interface KernelLogLine {
   stream: 'stdout' | 'stderr'
   line: string
   ts: number
+  source?: KernelLogSource
 }
 
 export interface MihomoSupervisor {
@@ -76,9 +82,15 @@ export interface MihomoSupervisor {
   // 序列化下发，留在这里就只能靠「记得脱敏」；同源的 /api/mihomo 代理自己注
   // Authorization，面板只需要 secretSet 这一个布尔。
   getControllerSecret: () => string
-  // 缓冲内的内核进程输出（旧→新）。SSE 订阅者连上来先重放这段，否则启动失败那
+  // 缓冲内的服务日志（旧→新）。SSE 订阅者连上来先重放这段，否则启动失败那
   // 几秒的报错永远只存在于没有人看的时候。
   getRecentLogs: () => KernelLogLine[]
+  // 往同一段历史里追加一行。GEO / 规则集合这类下载是面板后端自己干的，没有进程
+  // 替它们出声，不写进来的话日志页根本答不出「刚才那趟下载成没成」。
+  appendLog: (
+    line: string,
+    init?: { stream?: 'stdout' | 'stderr'; source?: KernelLogSource },
+  ) => void
   start: () => Promise<KernelState>
   stop: () => Promise<KernelState>
   restart: () => Promise<KernelState>
@@ -91,6 +103,8 @@ export interface MihomoSupervisor {
   // so a live kernel keeps whatever it booted with. Optional so desktop/test
   // doubles that pin the controller stay assignable.
   setController?: (patch: { externalController?: string; secret?: string }) => void
+  // 跑一次 `mihomo -t`。探针的每一行原始输出不进服务日志 —— 一次校验只留一行结论
+  // （通过 / 带原因的失败 / 超时），完整输出在返回的 message 里，由调用方原样回给面板。
   validate: (configPath: string) => Promise<{ valid: boolean; message: string }>
   on: ((event: 'log', cb: (l: KernelLogLine) => void) => void) &
     ((event: 'state', cb: (s: KernelState) => void) => void)

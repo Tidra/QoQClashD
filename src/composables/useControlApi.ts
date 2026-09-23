@@ -9,6 +9,7 @@ import type {
   ProfileEditorPreview,
   ProfileEditorSnapshot,
   ProfileMeta,
+  RuleSetUpdateResult,
   SystemProxyState,
   TunStatus,
   ValidateResult,
@@ -29,6 +30,10 @@ const PROFILE_REFRESH_AND_ACTIVATE_TIMEOUT = 390_000
 // api.github.com server-side.
 const KERNEL_ENSURE_TIMEOUT = 390_000
 const KERNEL_RELEASES_TIMEOUT = 60_000
+// GEO 数据库和规则集合都是宿主机直出的下载：15s 的默认预算会把已经下了一半的请求掐掉。
+// 三件套近 28 MB，实测这台机器到 GitHub 只有 12–30 KB/s 时一趟就是十几分钟，所以预算给到
+// 15 分钟。面板真的挂断（关页、超时）时后端会跟着掐掉上游下载，不会留下没人看着的写盘。
+const ASSET_DOWNLOAD_TIMEOUT = 900_000
 
 export interface EnsureKernelBody {
   /** KERNEL_MIRRORS whitelist key, e.g. 'direct' | 'gh-proxy'. */
@@ -258,9 +263,16 @@ export function useControlApi() {
     switchKernel: (version: string) =>
       client.post('kernel/switch', { json: { version } }).json<{ ok: true }>(),
 
-    // Geo assets (capability-gated 'geo-assets'). POST downloads the geoip/
-    // geosite/mmdb databases into the kernel home dir and echoes { ok, files }.
-    updateGeoAssets: () => client.post('geo/update').json<GeoUpdateResult>(),
+    // Geo assets + rule-sets: the agent downloads them itself into the kernel
+    // home dir, so neither needs the core running. POST { name } fetches that
+    // drafted rule-provider's url onto its drafted path ({ ok:false, error } on
+    // a 200 when the draft has nothing to download).
+    updateGeoAssets: () =>
+      client.post('geo/update', { timeout: ASSET_DOWNLOAD_TIMEOUT }).json<GeoUpdateResult>(),
+    updateRuleSet: (name: string) =>
+      client
+        .post('rulesets/update', { json: { name }, timeout: ASSET_DOWNLOAD_TIMEOUT })
+        .json<RuleSetUpdateResult>(),
 
     // Active profile SOURCE (GET /config): the last-applied profile yaml without
     // the supervisor-injected runtime keys — the right baseline to diff the

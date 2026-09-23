@@ -722,6 +722,23 @@
                 </td>
                 <td class="pinned-td sticky right-0 z-10 text-right whitespace-nowrap">
                   <button
+                    v-if="isProviderDownloadable(provider)"
+                    type="button"
+                    class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
+                    :title="$t('ruleProviderUpdate')"
+                    :disabled="!!updatingProvider"
+                    @click.stop="updateProviderFile(provider)"
+                  >
+                    <span
+                      v-if="updatingProvider === provider.name"
+                      class="loading loading-spinner loading-xs"
+                    ></span>
+                    <ArrowDownTrayIcon
+                      v-else
+                      class="h-3.5 w-3.5"
+                    />
+                  </button>
+                  <button
                     type="button"
                     class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
                     :title="$t('edit')"
@@ -886,6 +903,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  ArrowDownTrayIcon,
   Bars2Icon,
   PencilIcon,
   PlusIcon,
@@ -897,7 +915,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import Draggable from 'vuedraggable'
 import { can } from '@/assembly/backend'
-import { updateConfigs } from '@/assembly/config'
+import { reloadConfigsAPI, updateConfigs } from '@/assembly/config'
 import CtrlsBar from '@/components/common/CtrlsBar.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -909,6 +927,7 @@ import RuleListEditor, { type RuleListRow } from '@/components/routing/RuleListE
 import RuleProviderEditor from '@/components/routing/RuleProviderEditor.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { useColumnPicker, type ColumnOption } from '@/composables/useColumnPicker'
+import { useControlApi } from '@/composables/useControlApi'
 import { confirmDanger } from '@/helper/confirmDialog'
 import { showNotification } from '@/helper/notification'
 import { notifyRequestError } from '@/helper/requestError'
@@ -1312,6 +1331,8 @@ const confirmDeleteInbound = (inbound: InboundDraft) =>
 // ── 规则集合（rule-providers） ──────────────────────────────────
 const providerEditorOpen = ref(false)
 const editingProvider = ref<RuleProviderDraft | null>(null)
+// 正在下载中的集合名：一次只让一行转圈，两个下载同时跑只会让提示互相盖。
+const updatingProvider = ref('')
 
 const providerProxyOptions = computed(() => [
   { value: '', label: t('inboundDefaultProxy') },
@@ -1336,6 +1357,31 @@ const confirmDeleteProvider = (provider: RuleProviderDraft) =>
     removeRuleProvider(provider.name)
     showNotification({ content: 'routingDeleted', type: 'alert-success' })
   })
+
+/** 只有填了 url 与本地 path 的 http 集合才谈得上「自己下一份文件」 */
+const isProviderDownloadable = (provider: RuleProviderDraft) =>
+  provider.type === 'http' && !!provider.url?.trim() && !!provider.path?.trim()
+
+// 手动更新：agent 按草稿里的 url 直接覆盖 path，全程不叫内核动手，所以内核停着也能更。
+const updateProviderFile = async (provider: RuleProviderDraft) => {
+  if (updatingProvider.value) return
+  updatingProvider.value = provider.name
+  try {
+    const result = await useControlApi().updateRuleSet(provider.name)
+    if (!result.ok) throw new Error(result.error || 'rule-set update failed')
+    // 文件是新的了，跑着的内核手里还是内存那份 —— 连着内核就热重载一次。
+    if (can('reloadConfigs')) await reloadConfigsAPI()
+    showNotification({
+      content: 'ruleProviderUpdated',
+      params: { name: provider.name },
+      type: 'alert-success',
+    })
+  } catch (error) {
+    notifyRequestError(error)
+  } finally {
+    updatingProvider.value = ''
+  }
+}
 
 // ── 新建 ────────────────────────────────────────────────────────
 const openCreate = () => {

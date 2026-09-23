@@ -1202,6 +1202,7 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{ view?: 'groups' | 'nodes' }>(), { view: 'groups' })
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { handlerProxySelect } from '@/assembly/proxies'
 import { confirmDanger } from '@/helper/confirmDialog'
 import { showNotification } from '@/helper/notification'
 import {
@@ -1355,14 +1356,14 @@ const saveRealGroup = async (payload: ProxyGroupDraft) => {
   const originalName = editingGroup.value?.name
   upsertProxyGroup({ ...payload, type: normalizeGroupType(payload.type) }, originalName)
   closeGroupEditor()
-  showNotification({ content: t('proxyGroupEditorApplied'), type: 'alert-success' })
+  showNotification({ content: 'proxyGroupEditorApplied', type: 'alert-success' })
 }
 
 const deleteRealGroup = async (g: ProxyGroupDraft) => {
   if (isProtectedGroup(g.name)) return
   await confirmDanger(t('proxyGroupEditorDeleteConfirm', { name: g.name }), () => {
     removeProxyGroup(g.name)
-    showNotification({ content: t('proxyGroupEditorDeleteApplied'), type: 'alert-success' })
+    showNotification({ content: 'proxyGroupEditorDeleteApplied', type: 'alert-success' })
   })
 }
 
@@ -1439,16 +1440,24 @@ const memberKind = (name: string): 'node' | 'group' | 'missing' => {
 }
 const nodeNameSet = computed(() => new Set(allNodes.value.map((node) => node.name)))
 const isSelectableGroup = (group: ProxyGroupDraft) => normalizeGroupType(group.type) === 'select'
+// 选择组的「当前节点」是运行时状态：组已经在内核里就跑 PUT /proxies/{组}，流量立刻改道；
+// 只有组还没下发过（内核里查不到）时才退回到「记进草稿，等下次下发」。
+const applyGroupSelection = async (group: ProxyGroupDraft, member: string | undefined) => {
+  setProxyGroupDefaultSelected(group.name, member)
+  if (!member) {
+    showNotification({ content: 'proxyGroupEditorDeselectedMember', type: 'alert-success' })
+    return
+  }
+  const live = await handlerProxySelect(group.name, member)
+  showNotification({
+    content: live ? 'proxyGroupEditorSelectedLive' : 'proxyGroupEditorSelectedDraft',
+    params: { name: member },
+    type: live ? 'alert-success' : 'alert-info',
+  })
+}
 const selectGroupMember = (group: ProxyGroupDraft, member: string) => {
   if (!isSelectableGroup(group) || memberKind(member) === 'missing') return
-  const next = group['default-selected'] === member ? undefined : member
-  setProxyGroupDefaultSelected(group.name, next)
-  showNotification({
-    content: next
-      ? t('proxyGroupEditorSelectedMember', { name: member })
-      : t('proxyGroupEditorDeselectedMember'),
-    type: 'alert-success',
-  })
+  void applyGroupSelection(group, group['default-selected'] === member ? undefined : member)
 }
 // 表格成员数/当前选择下拉：筛选条件展开后与显式成员合并计数
 const groupMemberTotal = (group: ProxyGroupDraft) =>
@@ -1468,13 +1477,7 @@ const selectedMemberOptions = (group: ProxyGroupDraft) => [
 ]
 const setGroupSelected = (group: ProxyGroupDraft, member: string) => {
   if (member === (group['default-selected'] ?? '')) return
-  setProxyGroupDefaultSelected(group.name, member || undefined)
-  if (member) {
-    showNotification({
-      content: t('proxyGroupEditorSelectedMember', { name: member }),
-      type: 'alert-success',
-    })
-  }
+  void applyGroupSelection(group, member || undefined)
 }
 const memberChipClass = (group: ProxyGroupDraft, member: string) => {
   if (memberKind(member) === 'missing') return 'bg-base-100/70 text-error cursor-not-allowed'

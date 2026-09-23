@@ -104,10 +104,6 @@ export const fetchRuleProvidersAPI = () => {
   return axios.get<{ providers: Record<string, RuleProvider> }>('/providers/rules')
 }
 
-export const updateRuleProviderAPI = (name: string) => {
-  return axios.put(`/providers/rules/${encodeURIComponent(name)}`)
-}
-
 export const disconnectClashByIdAPI = (id: string) => {
   return axios.delete(`/connections/${id}`)
 }
@@ -184,10 +180,6 @@ export const updateConfigsAPI = (
     path: config.path || '',
     payload: config.payload || '',
   })
-}
-
-export const updateGeoDataAPI = () => {
-  return axios.post('/configs/geo')
 }
 
 export const upgradeCoreAPI = (type: 'release' | 'alpha' | 'auto') => {

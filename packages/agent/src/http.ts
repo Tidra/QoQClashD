@@ -20,7 +20,8 @@ import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { KERNEL_MIRRORS } from './kernel/assets'
 import { listMihomoVersions } from './kernel/fetch-kernel'
-import { fetchGeoAssets } from './kernel/geo'
+import { fetchGeoAssets, GEO_ASSET_FILE_COUNT } from './kernel/geo'
+import { fetchRuleSet, RULE_PROVIDERS_KV_KEY } from './kernel/rulesets'
 import { ConfigPatchConflictError } from './merge'
 import type { ProfileConfigEditor } from './profile-editor'
 import { ProfileEditorConflictError, ProfileEditorValidationError } from './profile-editor'
@@ -67,6 +68,29 @@ function assertNonCredentialKeys(keys: string[]) {
     statusCode: 400,
     statusMessage: `credential keys are not writable: ${blocked.join(', ')}`,
   })
+}
+
+// 资产下载类接口（GEO / 规则集合）的业务失败一律回 200 + { ok:false, error }：面板把这
+// 行 error 原样弹给用户，不必为了读它去拆 ky 抛出的 HTTPError。
+function downloadFailure(error: unknown) {
+  return { ok: false, error: error instanceof Error ? error.message : String(error) }
+}
+
+const isAbortError = (error: unknown) =>
+  error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
+
+const megabytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+
+// 客户端挂断（面板超时、关页、切走）就掐掉在途下载。不接这个 signal 的话，后端会在
+// 用户已经看到红色超时之后继续占着带宽把文件换掉 —— 日志页上是一片空白，磁盘上却动过。
+function requestSignal(event: H3Event): AbortSignal {
+  const controller = new AbortController()
+  const res = event.node.res
+  // 正常收尾同样会发 'close'，所以只有响应还没写完就关掉的才算断开。
+  res.once('close', () => {
+    if (!res.writableEnded) controller.abort()
+  })
+  return controller.signal
 }
 
 export interface ControlRouterDeps {
@@ -821,9 +845,82 @@ export function createControlRouter(deps: ControlRouterDeps): App {
   // ---- Geo assets (always available — backed by homeDir + fetch) ----
   router.post(
     `${PREFIX}/geo/update`,
-    defineEventHandler(async () => {
-      const { files } = await fetchGeoAssets(deps.homeDir, { fetch: geoFetch })
-      return { ok: true, files }
+    defineEventHandler(async (event) => {
+      // 三件套近 28 MB，慢网络下要跑十几分钟，所以每一步都往服务日志写一行：没有这些
+      // 行，点完按钮的十几分钟里日志页什么也不动，没人分得清是在下还是砸了。
+      const written: string[] = []
+      supervisor.appendLog('GEO database: downloading geoip.dat, geosite.dat, country.mmdb', {
+        source: 'asset',
+      })
+      try {
+        const { files } = await fetchGeoAssets(deps.homeDir, {
+          fetch: geoFetch,
+          signal: requestSignal(event),
+          onWritten: (file, bytes) => {
+            written.push(file)
+            supervisor.appendLog(`GEO database: ${file} updated (${megabytes(bytes)})`, {
+              source: 'asset',
+            })
+          },
+        })
+        return { ok: true, files }
+      } catch (error) {
+        if (isAbortError(error)) {
+          supervisor.appendLog(
+            `GEO database: download cancelled after ${written.length} of ${GEO_ASSET_FILE_COUNT} file(s) (panel disconnected)`,
+            { source: 'asset' },
+          )
+        } else {
+          supervisor.appendLog(`GEO database: download failed — ${downloadFailure(error).error}`, {
+            stream: 'stderr',
+            source: 'asset',
+          })
+        }
+        return downloadFailure(error)
+      }
+    }),
+  )
+
+  // ---- Rule-sets (backed by the panel's own draft KV + homeDir, no kernel call) ----
+  // 名字点一个 provider，agent 按草稿里的 url 把它下到草稿的 path 上。
+  router.post(
+    `${PREFIX}/rulesets/update`,
+    defineEventHandler(async (event) => {
+      if (!deps.storage) return { ok: false, error: 'storage unavailable' }
+      const body = (await readBody(event).catch(() => ({}))) as { name?: unknown }
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      if (!name) return { ok: false, error: 'name is required' }
+      const raw = await deps.storage.get(RULE_PROVIDERS_KV_KEY)
+      let providers: unknown
+      try {
+        providers = raw ? JSON.parse(raw) : []
+      } catch {
+        return { ok: false, error: `rule-set drafts at ${RULE_PROVIDERS_KV_KEY} are unreadable` }
+      }
+      try {
+        supervisor.appendLog(`Rule-set "${name}": downloading`, { source: 'asset' })
+        const written = await fetchRuleSet({
+          providers,
+          name,
+          homeDir: deps.homeDir,
+          fetch: geoFetch,
+          signal: requestSignal(event),
+        })
+        // 只报名字与落地路径，不报 URL：规则地址可能带 token，日志页是明文历史。
+        supervisor.appendLog(
+          `Rule-set "${name}": updated ${written.path} (${megabytes(written.bytes)})`,
+          { source: 'asset' },
+        )
+        return { ok: true, ...written }
+      } catch (error) {
+        supervisor.appendLog(
+          isAbortError(error)
+            ? `Rule-set "${name}": download cancelled (panel disconnected)`
+            : `Rule-set "${name}": download failed — ${downloadFailure(error).error}`,
+          { stream: isAbortError(error) ? 'stdout' : 'stderr', source: 'asset' },
+        )
+        return downloadFailure(error)
+      }
     }),
   )
 

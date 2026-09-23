@@ -215,11 +215,13 @@ export const fetchProxies = () => clash.fetchProxies()
 
 // 切换节点只会由用户点击触发,且调用点都是模板里的 @click(没有 catch 的落点),
 // 所以在门面里兜住:失败弹提示,否则 UI 会停在旧选择上一声不吭。
+// 返回值表示内核有没有真的切过去 —— 节点池据此决定提示「即时生效」还是「下发后生效」。
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
   try {
     return await clash.handlerProxySelect(proxyGroupName, proxyName)
   } catch (e) {
     notifyRequestError(e)
+    return false
   }
 }
 

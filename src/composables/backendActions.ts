@@ -9,17 +9,12 @@
 // 需要先收集参数的动作(升级内核)走弹窗。弹窗的开关也在这里,
 // 弹窗本体挂在 App.vue —— 侧边栏常驻但设置页不常驻,挂在设置页里侧边栏就拉不起来。
 import { can } from '@/assembly/backend'
-import {
-  fetchConfigs,
-  flushDNSCacheAPI,
-  flushFakeIPAPI,
-  reloadConfigsAPI,
-  updateGeoDataAPI,
-} from '@/assembly/config'
+import { fetchConfigs, flushDNSCacheAPI, flushFakeIPAPI, reloadConfigsAPI } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
 import { restartCoreAPI } from '@/assembly/version'
 import { isSettingHidden } from '@/composables/settings'
+import { useControlApi } from '@/composables/useControlApi'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
 import { showConfirmDialog } from '@/helper/confirmDialog'
 import { notifyActionPending, showNotification } from '@/helper/notification'
@@ -55,6 +50,14 @@ const reloadAll = () => {
   fetchConfigs()
   fetchRules()
   fetchProxies()
+}
+
+// 下载由 agent 直出到内核家目录，内核在不在跑都能更；连着内核时热重载一次，
+// 免得它继续用内存里那份旧的。
+const updateGeoFiles = async () => {
+  const result = await useControlApi().updateGeoAssets()
+  if (!result.ok) throw new Error(result.error || 'geo update failed')
+  if (can('reloadConfigs')) await reloadConfigsAPI()
 }
 
 const isCoreRestarting = ref(false)
@@ -155,23 +158,17 @@ export const backendActions = computed<BackendAction[]>(() => {
     })
   }
 
-  if (can('updateGeoDatabase')) {
-    actions.push({
-      key: k.updateGeoDatabase,
-      label: 'updateGeoDatabase',
-      icon: ArrowDownTrayIcon,
-      running: isGeoUpdating.value,
-      opensModal: false,
-      run: () =>
-        runOnce(
-          'updateGeoDatabase',
-          isGeoUpdating,
-          updateGeoDataAPI,
-          'updateGeoSuccess',
-          reloadAll,
-        ),
-    })
-  }
+  actions.push({
+    key: k.updateGeoDatabase,
+    label: 'updateGeoDatabase',
+    icon: ArrowDownTrayIcon,
+    running: isGeoUpdating.value,
+    opensModal: false,
+    // GEO 文件由 agent 自己下到家目录，内核在不在跑都能更；连着内核时热重载一次，
+    // 免得它继续拿内存里那份旧的。
+    run: () =>
+      runOnce('updateGeoDatabase', isGeoUpdating, updateGeoFiles, 'updateGeoSuccess', reloadAll),
+  })
 
   actions.push({
     key: k.flushDNSCache,

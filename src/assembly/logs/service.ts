@@ -6,8 +6,9 @@
 // 于是「内核运行日志」与「其余进程输出」的区分降级成行上的 origin 字段，由日志页
 // 的过滤下拉去筛（见 assembly/logs 的 LOG_ORIGINS）。
 //
-// 缓冲里除了常驻进程的输出，还有 `mihomo -t` 校验探针的每一行：「应用配置」被 400 掉
-// 时那次运行是一次性子进程，报错不落进这条流就永远只存在于没人看着的几秒钟里。
+// 缓冲里除了常驻进程的输出，还有两类后端自己写进来的行：`mihomo -t` 校验探针每次只留
+// 一行结论（「应用配置」被 400 掉时那一次运行是一次性子进程），GEO / 规则集合下载则按
+// 文件逐行报进度。两类都不带 logrus 的级别，所以靠帧上的 source 分来源。
 //
 // SSE 断线自动重连时后端会整段重放缓冲，所以按 (ts, stream, line) 去重。
 import { createControlEventSource } from '@/api/control'
@@ -20,6 +21,7 @@ interface KernelLogFrame {
   stream?: 'stdout' | 'stderr'
   line?: string
   ts?: number
+  source?: 'asset'
 }
 
 // 缓冲里的行是历史，用产生时的时间戳；异常帧没有 ts 就退回当下。
@@ -64,7 +66,8 @@ export const subscribeServiceLogs = (onBatch: (batch: Log[]) => void): LogsSubsc
     seen.add(key)
 
     // 带 level= 与 msg= 的行算内核运行日志，其余都算进程原始输出。级别读不出来时
-    // 退回通道能给的最粗粒度：mihomo 的异常输出走 stderr。
+    // 退回通道能给的最粗粒度：mihomo 的异常输出走 stderr。后端自己写的行（资源下载）
+    // 天生没有级别，来源由帧上的 source 说了算。
     const level = readLevel(frame.line)
     const message = readMessage(frame.line)
 
@@ -72,7 +75,8 @@ export const subscribeServiceLogs = (onBatch: (batch: Log[]) => void): LogsSubsc
       {
         type: level ?? (frame.stream === 'stderr' ? LOG_LEVEL.Error : LOG_LEVEL.Info),
         payload: message ?? frame.line,
-        origin: level !== undefined && message !== undefined ? 'kernel' : 'process',
+        origin:
+          frame.source ?? (level !== undefined && message !== undefined ? 'kernel' : 'process'),
         time: frameTime(frame.ts),
       },
     ])

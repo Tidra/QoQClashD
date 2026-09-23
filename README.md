@@ -10,12 +10,12 @@ v0.1 · 面向 Mihomo 的本地代理控制面板。面板自己托管内核：�
 - **冷启动零配置**：`data/` 不存在时自动建库并写入默认值——API 端口 9090、主入口 mixed-port 7890、默认「全部节点」select 分组、局域网直连 + 国内直连 + 其余走默认组。首次设置的面板密码同时下发成内核 secret。
 - **节点与订阅**：订阅源拉取（走后端代理，绕开 CORS）、解码去重、节点池与代理组编辑、批量多选删除、并发延迟测速、测速结果跨视图共享。
 - **分流中心**：主规则/子规则同构列表、规则集合（rule-providers）、入口（listeners）与 allow-lan，表单与 YAML 双向编辑，下发前内核 `-t` 配置校验。
-- **可视化**：概览卡片（流量/延迟/连接历史/规则命中/拓扑/地球仪）、连接页、日志页、代理组切换。
+- **可视化**：概览卡片（流量/延迟/连接历史/规则命中/拓扑）、连接页、日志页、代理组切换。
 - **运维**：面板登录（签名 cookie 会话，7 天免重登）、导出/导入整个数据库（密码除外）、GeoIP/GeoSite 更新、系统代理开关、TUN 状态、PWA 离线、中英繁俄四语言。
 
 ## 技术栈
 
-Vue 3 + Vite + TypeScript · daisyUI 5 + Tailwind CSS 4 · vue-i18n · TanStack Vue Table · ECharts · three.js · Node + h3 · sql.js（SQLite）· pnpm workspace。
+Vue 3 + Vite + TypeScript · daisyUI 5 + Tailwind CSS 4 · vue-i18n · TanStack Vue Table · ECharts · Node + h3 · sql.js（SQLite）· pnpm workspace。
 
 ## 目录结构
 
