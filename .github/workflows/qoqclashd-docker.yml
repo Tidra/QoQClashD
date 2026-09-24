@@ -12,8 +12,9 @@ permissions:
   contents: read
   packages: write
 
-# 同一个 ref 上只跑一趟：两次连推 master 会并行开两个 build-and-push，抢同一个 latest
-# 标签和同一份 type=gha 缓存。已经进镜像推送阶段的绝不取消，所以 cancel-in-progress 关。
+# 同一个 ref 上只跑一趟：连着打两个 tag（或对同一 tag 重复 dispatch）会并行开两个
+# build-and-push，抢同一个 latest 标签和同一份 type=gha 缓存。已经进镜像推送阶段的绝不
+# 取消，所以 cancel-in-progress 关。
 concurrency:
   group: docker-image-${{ github.ref }}
   cancel-in-progress: false
@@ -22,8 +23,8 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  # 推 master 就会把 latest 镜像发出去，所以先发之前在这台干净机器上把三道关跑全：
-  # 类型、ESLint、两个包的单测。任何一道红了都不进构建阶段。
+  # 每一趟都跑这三道关（类型、ESLint、两个包的单测），任何一道红了都不进构建阶段。
+  # 推 master 只会跑到这里为止 —— 镜像的发布口收在 tag 上，见 build-and-push 的 if。
   checks:
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +54,9 @@ jobs:
 
   build-and-push:
     needs: checks
+    # 只从 tag（v*）和手动 dispatch 出镜像。发版时推 master 与推 tag 是两个独立的 push
+    # 事件，两边都建的话一次发版就要跑两趟多架构构建 —— master 那一趟留在这里被跳过。
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -76,9 +80,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/qoqclashd
+          # latest 跟着 tag 走（master 那趟已经不建镜像了，metadata-action 自带的
+          # {{is_default_branch}} 在 tag 事件里恒为 false），另外允许从默认分支手动 dispatch 补发。
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
