@@ -173,6 +173,76 @@
         </div>
         <div class="text-base-content/60 mt-1 text-xs">{{ $t('mainEntryLocked') }}</div>
       </div>
+
+      <div class="border-base-300/60 bg-base-200/40 rounded-md border p-3">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="text-sm font-medium">{{ $t('dnsSettings') }}</div>
+          <input
+            v-model="form.dnsEnable"
+            type="checkbox"
+            class="toggle"
+            :title="$t('dnsSettings')"
+          />
+        </div>
+        <div
+          v-show="form.dnsEnable"
+          class="settings-grid node-form-grid"
+        >
+          <div class="setting-item node-span-2">
+            <div class="setting-item-label shrink-0!">{{ $t('dnsNameserver') }}</div>
+            <input
+              v-model="form.dnsNameserverStr"
+              type="text"
+              class="input input-sm node-long-input"
+              placeholder="223.5.5.5, https://dns.google/dns-query"
+            />
+          </div>
+          <div class="setting-item node-span-2">
+            <div class="setting-item-label shrink-0!">{{ $t('dnsFallback') }}</div>
+            <input
+              v-model="form.dnsFallbackStr"
+              type="text"
+              class="input input-sm node-long-input"
+              placeholder="1.1.1.1, 8.8.8.8"
+            />
+          </div>
+          <div class="setting-item node-span-2">
+            <div class="setting-item-label shrink-0!">{{ $t('dnsDefaultNameserver') }}</div>
+            <input
+              v-model="form.dnsDefaultNameserverStr"
+              type="text"
+              class="input input-sm node-long-input"
+              placeholder="system"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label shrink-0!">{{ $t('dnsEnhancedMode') }}</div>
+            <SelectInput
+              v-model="form.dnsEnhancedMode"
+              class="select select-sm min-w-28"
+              :options="[
+                { value: '', label: $t('dnsKernelDefault') },
+                ...DNS_ENHANCED_MODES.map((mode) => ({ value: mode, label: mode })),
+              ]"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-label shrink-0!">{{ $t('dnsFakeIpRange') }}</div>
+            <input
+              v-model="form.dnsFakeIpRange"
+              type="text"
+              class="input input-sm w-36"
+              placeholder="198.18.0.1/16"
+            />
+          </div>
+        </div>
+        <div
+          v-show="form.dnsEnable"
+          class="text-base-content/60 mt-1 text-xs"
+        >
+          {{ $t('dnsRestartHint') }}
+        </div>
+      </div>
     </div>
 
     <div class="border-base-300/60 flex items-center justify-end gap-2 border-t p-4 pt-3">
@@ -186,7 +256,7 @@
       <button
         type="button"
         class="btn btn-sm btn-primary"
-        :disabled="inputMode === 'yaml' ? !entryYaml.trim() : !hasAnyPort"
+        :disabled="inputMode === 'yaml' ? !entryYaml.trim() : !canSaveForm"
         @click="saveEntry"
       >
         {{ $t('save') }}
@@ -202,8 +272,8 @@ import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
 import { useDualInputMode } from '@/composables/dualInputMode'
 import { parse as parseYaml } from 'yaml'
-import { TUN_STACKS } from '@/store/routing'
-import type { MainEntryDraft } from '@/store/routing'
+import { DNS_ENHANCED_MODES, TUN_STACKS } from '@/store/routing'
+import type { DnsDraft, MainEntryDraft } from '@/store/routing'
 
 const props = defineProps<{
   modelValue: boolean
@@ -217,6 +287,21 @@ const emits = defineEmits<{
 
 // 留空即使用内核默认值：灰字占位展示，构建 YAML 时省略该键
 const TUN_DEFAULTS = { mtu: 9000, dnsHijack: 'any:53' }
+
+/** 逗号分隔的输入框 ↔ 字符串列表 */
+const toList = (value: string) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const toStringList = (value: unknown) => {
+  if (Array.isArray(value)) return value.map(String)
+  if (typeof value === 'string') return toList(value)
+  return undefined
+}
+
+const toStr = (value: unknown) => (typeof value === 'string' ? value : undefined)
 
 const createForm = (initial: MainEntryDraft) => {
   const hijack = (initial.tun?.['dns-hijack'] ?? []).join(',')
@@ -235,6 +320,13 @@ const createForm = (initial: MainEntryDraft) => {
     tunAutoDetectInterface: initial.tun?.['auto-detect-interface'] ?? true,
     tunStrictRoute: initial.tun?.['strict-route'] ?? false,
     tunDnsHijackStr: hijack === TUN_DEFAULTS.dnsHijack ? '' : hijack,
+    // 草稿里没有 dns 这一项就是「不配置」，与内核默认解析一致
+    dnsEnable: !!initial.dns,
+    dnsNameserverStr: (initial.dns?.nameserver ?? []).join(','),
+    dnsFallbackStr: (initial.dns?.fallback ?? []).join(','),
+    dnsDefaultNameserverStr: (initial.dns?.['default-nameserver'] ?? []).join(','),
+    dnsEnhancedMode: initial.dns?.['enhanced-mode'] ?? '',
+    dnsFakeIpRange: initial.dns?.['fake-ip-range'] ?? '',
   }
 }
 
@@ -249,6 +341,13 @@ const hasAnyPort = computed(() =>
     form.value.tproxyPort,
   ].some((port) => typeof port === 'number' && port > 0),
 )
+
+// 开了 DNS 却不给上游，落出去的就是一个只会走内核硬编码默认值的空块
+const dnsUsable = computed(
+  () => !form.value.dnsEnable || toList(form.value.dnsNameserverStr).length > 0,
+)
+
+const canSaveForm = computed(() => hasAnyPort.value && dnsUsable.value)
 
 const resetForm = () => {
   form.value = createForm(props.initial)
@@ -266,10 +365,17 @@ const toPort = (value: unknown) => (typeof value === 'number' && value > 0 ? val
 
 const buildDraft = (): MainEntryDraft => {
   const f = form.value
-  const dnsHijack = f.tunDnsHijackStr
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+  const dnsHijack = toList(f.tunDnsHijackStr)
+  const dnsNameserver = toList(f.dnsNameserverStr)
+  const dnsFallback = toList(f.dnsFallbackStr)
+  const dnsDefaultNameserver = toList(f.dnsDefaultNameserverStr)
+  const dns: DnsDraft = {
+    ...(f.dnsEnhancedMode ? { 'enhanced-mode': f.dnsEnhancedMode } : {}),
+    ...(dnsDefaultNameserver.length ? { 'default-nameserver': dnsDefaultNameserver } : {}),
+    ...(dnsNameserver.length ? { nameserver: dnsNameserver } : {}),
+    ...(dnsFallback.length ? { fallback: dnsFallback } : {}),
+    ...(f.dnsFakeIpRange.trim() ? { 'fake-ip-range': f.dnsFakeIpRange.trim() } : {}),
+  }
   return {
     ...(f.port ? { port: f.port } : {}),
     ...(f.socksPort ? { 'socks-port': f.socksPort } : {}),
@@ -287,6 +393,7 @@ const buildDraft = (): MainEntryDraft => {
       'strict-route': f.tunStrictRoute,
       ...(dnsHijack.length ? { 'dns-hijack': dnsHijack } : {}),
     },
+    ...(f.dnsEnable ? { dns } : {}),
   }
 }
 
@@ -295,6 +402,7 @@ const applyYaml = (yamlText: string): boolean => {
     const parsed = parseYaml(yamlText) as Record<string, unknown>
     if (!parsed || typeof parsed !== 'object') return false
     const tun = parsed.tun as Record<string, unknown> | undefined
+    const dns = parsed.dns as Record<string, unknown> | undefined
     form.value = createForm({
       port: toPort(parsed.port),
       'socks-port': toPort(parsed['socks-port']),
@@ -305,15 +413,22 @@ const applyYaml = (yamlText: string): boolean => {
       tun: {
         enable: tun?.enable === true,
         stack: typeof tun?.stack === 'string' ? tun.stack : 'gvisor',
-        device: typeof tun?.device === 'string' ? tun.device : undefined,
+        device: toStr(tun?.device),
         mtu: typeof tun?.mtu === 'number' ? tun.mtu : undefined,
         'auto-route': tun?.['auto-route'] !== false,
         'auto-detect-interface': tun?.['auto-detect-interface'] !== false,
         'strict-route': tun?.['strict-route'] === true,
-        'dns-hijack': Array.isArray(tun?.['dns-hijack'])
-          ? tun['dns-hijack'].map(String)
-          : undefined,
+        'dns-hijack': toStringList(tun?.['dns-hijack']),
       },
+      dns: dns
+        ? {
+            'enhanced-mode': toStr(dns['enhanced-mode']),
+            'default-nameserver': toStringList(dns['default-nameserver']),
+            nameserver: toStringList(dns.nameserver),
+            fallback: toStringList(dns.fallback),
+            'fake-ip-range': toStr(dns['fake-ip-range']),
+          }
+        : undefined,
     })
     return true
   } catch {
@@ -339,7 +454,7 @@ const handleModelValueUpdate = (value: boolean | undefined) => {
 
 const saveEntry = () => {
   if (inputMode.value === 'yaml' && !commitYaml()) return
-  if (!hasAnyPort.value) return
+  if (!canSaveForm.value) return
   emits('save', buildDraft())
   emits('update:modelValue', false)
 }

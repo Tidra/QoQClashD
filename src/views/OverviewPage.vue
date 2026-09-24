@@ -8,13 +8,13 @@
         class="card bg-base-100/80 border-base-300/70 rounded-2xl border p-4 shadow-sm backdrop-blur-sm"
       >
         <div class="flex items-center justify-between gap-3">
-          <div>
+          <div class="min-w-0">
             <div class="text-base-content/60 text-[10px] font-semibold tracking-[0.2em] uppercase">
               QoQClashD
             </div>
-            <h2 class="text-base-content mt-1 text-xl font-semibold">Mihomo 控制面板</h2>
+            <h2 class="text-base-content mt-1 truncate text-xl font-semibold">Mihomo 控制面板</h2>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <div
               class="badge badge-lg gap-2 text-xs font-medium"
               :class="kernelReady ? 'badge-success' : 'badge-warning'"

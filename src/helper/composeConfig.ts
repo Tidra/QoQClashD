@@ -10,7 +10,7 @@ import {
   proxyGroups,
   resolveGroupMembers,
 } from '@/store/proxyGroups'
-import type { InboundDraft, RuleProviderDraft, TunSettings } from '@/store/routing'
+import type { DnsDraft, InboundDraft, RuleProviderDraft, TunSettings } from '@/store/routing'
 import {
   routingInbounds,
   routingMainEntry,
@@ -96,6 +96,18 @@ const groupToEntry = (group: ProxyGroupDraft, nodeNames: string[]): Record<strin
   return entry
 }
 
+/** 主入口的 DNS 草稿 → config.yaml 的 dns 块：有这一项就是用户开了它，enable 恒真 */
+const dnsToEntry = (dns: DnsDraft): Record<string, unknown> => {
+  const entry: Record<string, unknown> = { enable: true }
+  if (dns['enhanced-mode']) entry['enhanced-mode'] = dns['enhanced-mode']
+  if (dns['fake-ip-range']) entry['fake-ip-range'] = dns['fake-ip-range']
+  for (const key of ['default-nameserver', 'nameserver', 'fallback'] as const) {
+    const value = dns[key]
+    if (value?.length) entry[key] = value
+  }
+  return entry
+}
+
 const tunToEntry = (tun: TunSettings): Record<string, unknown> => {
   const entry: Record<string, unknown> = { enable: tun.enable, stack: tun.stack }
   const optional = [
@@ -151,6 +163,8 @@ export const composeConfigYaml = (): string => {
   }
   if (main['allow-lan']) config['allow-lan'] = true
   if (main.tun) config.tun = tunToEntry(main.tun)
+  // 主入口没配 DNS 就整块不写，内核按默认方式解析
+  if (main.dns) config.dns = dnsToEntry(main.dns)
   // 日志等级来自面板偏好（见 assembly/config/logLevel）。info 就是 mihomo 自己的默认值，
   // 只有改过才写这一行 —— 否则所有人升级完都凭空多出一个「有改动待应用」的红点。
   if (kernelLogLevel.value !== LOG_LEVEL.Info) config['log-level'] = kernelLogLevel.value
@@ -167,6 +181,7 @@ export const composeConfigYaml = (): string => {
       // 面板草稿把组名存进 payload、出站存进 target，这里改写为恒真条件并丢弃草稿 target。
       rule.type === 'SUB-RULE' ? `SUB-RULE,(SRC-PORT,0-65535),${rule.payload}` : ruleToString(rule),
     )
+  // 规则表里的每一行都是用户的普通数据（删掉不会再冒出来），兜底的 MATCH 只在这里保证。
   if (!rules.some((line) => line.startsWith('MATCH'))) {
     rules.push(`MATCH,${ALL_NODES_GROUP_NAME}`)
   }

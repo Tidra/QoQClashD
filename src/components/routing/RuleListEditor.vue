@@ -63,18 +63,12 @@
         >
           <span class="text-base-content/50 w-5 shrink-0 text-right text-xs">{{ index + 1 }}</span>
           <SelectInput
-            v-if="!row.builtin"
             v-model="row.type"
             :options="typeOptions"
             searchable
             :search-placeholder="$t('search')"
             class="select select-sm w-36 min-w-0 shrink-0"
           />
-          <span
-            v-else
-            class="badge badge-ghost shrink-0"
-            >{{ row.type }}</span
-          >
           <SelectInput
             v-if="row.type === 'SUB-RULE'"
             v-model="row.payload"
@@ -149,7 +143,6 @@
             <button
               type="button"
               class="btn btn-ghost btn-xs text-error h-6 min-h-6 w-6 p-0"
-              :disabled="!!row.builtin"
               :title="$t('delete')"
               @click="rows.splice(index, 1)"
             >
@@ -213,7 +206,6 @@ export type RuleListRow = {
   payload: string
   target: string
   noResolve: boolean
-  builtin?: boolean
 }
 
 const props = defineProps<{
@@ -322,32 +314,29 @@ const buildYamlObject = () => {
   return props.mode === 'sub' ? { name: name.value.trim(), rules } : { rules }
 }
 
-const parseLine = (line: string, fallbackIndex: number): RuleListRow | null => {
+const parseLine = (line: string): RuleListRow | null => {
   const parts = line
     .split(',')
     .map((part) => part.trim())
     .filter((part) => part.length)
   if (!parts.length) return null
   const type = parts[0].toUpperCase()
-  const prev = props.initialRows[fallbackIndex]
   if (type === 'MATCH' || type === 'FINAL') {
     return {
-      id: prev?.id ?? generateId(),
+      id: generateId(),
       type: 'MATCH',
       payload: '',
       target: parts[1] ?? '',
       noResolve: false,
-      ...(prev?.builtin ? { builtin: true } : {}),
     }
   }
   if (parts.length < 3 || !ALL_RULE_TYPES.includes(type)) return null
   return {
-    id: prev?.id ?? generateId(),
+    id: generateId(),
     type,
     payload: parts[1],
     target: parts[2],
     noResolve: parts[parts.length - 1].toLowerCase() === 'no-resolve',
-    ...(prev?.builtin ? { builtin: true } : {}),
   }
 }
 
@@ -356,7 +345,7 @@ const applyYaml = (yamlText: string): boolean => {
     const parsed = parseYaml(yamlText) as Record<string, unknown>
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.rules)) return false
     if (props.mode === 'sub' && typeof parsed.name !== 'string') return false
-    const next = parsed.rules.map((line, index) => parseLine(String(line), index))
+    const next = parsed.rules.map((line) => parseLine(String(line)))
     if (next.some((row) => !row)) return false
     rows.value = next as RuleListRow[]
     if (props.mode === 'sub') name.value = parsed.name as string

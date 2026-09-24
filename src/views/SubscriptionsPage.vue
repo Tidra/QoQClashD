@@ -9,7 +9,7 @@
           v-model="subscriptionSearch"
           :placeholder="`${$t('search')} | Regex`"
           clearable
-          class="w-32 max-w-80 flex-1"
+          class="w-32 max-w-none flex-1 md:max-w-80"
         />
       </template>
       <button
@@ -27,7 +27,7 @@
         @click="openCreateDialog"
       >
         <PlusIcon class="h-4 w-4" />
-        {{ $t('subscriptionAdd') }}
+        <span class="hidden sm:inline">{{ $t('subscriptionAdd') }}</span>
       </button>
     </NodePageHeader>
     <div class="base-container m-3 min-h-0 flex-1 overflow-auto backdrop-blur-none!">

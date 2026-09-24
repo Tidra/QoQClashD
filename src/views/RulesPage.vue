@@ -4,18 +4,21 @@
     :style="padding"
   >
     <CtrlsBar solid>
-      <div class="flex min-h-12 items-center gap-2 p-2">
+      <div class="flex min-h-12 flex-wrap items-center gap-2 p-2">
         <SegmentedControl
           v-model="tab"
           :options="tabOptions"
           class="shrink-0"
         />
-        <div class="flex min-w-0 flex-1 items-center gap-2">
+        <!-- 与 NodePageHeader 同款：窄屏让搜索单独换一行，免得被压成一条几十像素的缝 -->
+        <div
+          class="order-last flex min-w-0 basis-full items-center gap-2 md:order-none md:flex-1 md:basis-auto"
+        >
           <TextInput
             v-model="search"
             :placeholder="`${$t('search')} | Regex`"
             clearable
-            class="w-32 max-w-80 flex-1"
+            class="w-full max-w-none flex-1 md:w-32 md:max-w-80"
           />
         </div>
         <div class="ml-auto flex shrink-0 items-center gap-2">
@@ -130,14 +133,18 @@
           v-if="viewMode === 'card'"
           class="flex flex-col gap-2"
         >
-          <!-- 子入口：通宽行卡，与上方网络监听横幅同款边框/端口 chip，类型色点区分协议 -->
+          <!-- 子入口：通宽行卡，与上方网络监听横幅同款边框/端口 chip，类型色点区分协议。
+               窄屏允许折行：名称与操作钮占第一行（钮靠右），chip 组与落地出口掉到第二行；
+               md 起把 order 换回「名称 / chip / 出口 / 钮」的单行顺序。 -->
           <div
             v-for="inbound in filteredInbounds"
             :key="inbound.id"
-            class="bg-base-200/60 hover:bg-base-300/40 border-base-300/60 flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors hover:shadow-sm"
+            class="bg-base-200/60 hover:bg-base-300/40 border-base-300/60 flex min-w-0 cursor-pointer flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border px-3 py-2.5 transition-colors hover:shadow-sm"
             @click="openEditInbound(inbound)"
           >
-            <div class="flex w-56 min-w-0 shrink-0 items-center gap-2">
+            <div
+              class="flex min-w-0 grow basis-44 items-center gap-2 md:w-56 md:shrink-0 md:grow-0 md:basis-auto"
+            >
               <span
                 class="h-2 w-2 shrink-0 rounded-full"
                 :class="inboundTypeStyle(inbound.type).dot"
@@ -149,7 +156,7 @@
                 >{{ inbound.type }}</span
               >
             </div>
-            <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+            <div class="order-3 flex shrink-0 flex-wrap items-center gap-1.5 md:order-2">
               <span
                 class="badge badge-md border-base-300 bg-base-100 font-mono text-xs"
                 :title="`${$t('port')} :${inbound.port || '—'}`"
@@ -168,11 +175,11 @@
             </div>
             <div
               v-if="inbound.proxy || inbound.rule"
-              class="text-base-content/60 min-w-0 flex-1 truncate text-right text-xs"
+              class="text-base-content/60 order-4 min-w-0 grow basis-24 truncate text-right text-xs md:order-3 md:flex-1 md:basis-0"
             >
               {{ inbound.proxy || ruleLabel(inbound.rule) }}
             </div>
-            <div class="relative z-10 ml-auto flex shrink-0 gap-0.5">
+            <div class="relative z-10 order-2 flex shrink-0 gap-0.5 md:order-4 md:ml-auto">
               <button
                 type="button"
                 class="btn btn-ghost btn-xs h-6 min-h-6 w-6 p-0"
@@ -1226,7 +1233,6 @@ const mainRows = computed<RuleListRow[]>(() =>
     payload: rule.payload,
     target: rule.target,
     noResolve: rule.noResolve ?? false,
-    ...(rule.builtin ? { builtin: true } : {}),
   })),
 )
 
@@ -1241,7 +1247,6 @@ const saveMainRules = (rows: RuleListRow[]) => {
       target: row.target,
       ...(row.noResolve ? { noResolve: true } : {}),
       enabled: true,
-      ...(row.builtin ? { builtin: true } : {}),
     })),
   )
   showNotification({ content: 'routingSaved', type: 'alert-success' })

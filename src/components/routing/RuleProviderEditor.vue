@@ -61,7 +61,8 @@
             v-model="form.path"
             type="text"
             class="input input-sm node-long-input"
-            placeholder="./ruleset/xxx.yaml"
+            :placeholder="ruleProviderDefaultPath(form.name || 'xxx', form.format)"
+            @input="pathTouched = true"
           />
         </div>
         <div class="setting-item">
@@ -181,6 +182,7 @@ import {
   RULE_PROVIDER_BEHAVIORS,
   RULE_PROVIDER_FORMATS,
   RULE_PROVIDER_TYPES,
+  ruleProviderDefaultPath,
 } from '@/store/routing'
 import type { RuleProviderDraft } from '@/store/routing'
 
@@ -205,6 +207,7 @@ const createForm = (initial?: RuleProviderDraft) => ({
   format: initial?.format ?? 'yaml',
   behavior: initial?.behavior ?? 'classical',
   url: initial?.url ?? '',
+  // 新增时留空，由下面的 watch 跟着名字与格式补；编辑存量行则保留它自己的路径
   path: initial?.path ?? '',
   interval: initial?.interval as number | undefined,
   sizeLimit: initial?.['size-limit'] as number | undefined,
@@ -214,13 +217,26 @@ const createForm = (initial?: RuleProviderDraft) => ({
 
 const form = ref(createForm(props.initial))
 
+/** 用户填过/存量自带的路径不再自动改写；只有全空的「新增」才跟着名字与格式走 */
+const pathTouched = ref(false)
+
 watch(
   () => props.modelValue,
   (value) => {
     if (value) {
+      pathTouched.value = !!props.initial?.path?.trim()
       form.value = createForm(props.initial)
       resetInputMode()
     }
+  },
+)
+
+watch(
+  () => [form.value.name, form.value.format, form.value.path] as const,
+  ([name, format, path]) => {
+    if (pathTouched.value) return
+    const next = name.trim() ? ruleProviderDefaultPath(name, format) : ''
+    if (next !== path) form.value.path = next
   },
 )
 
@@ -266,6 +282,7 @@ const applyYaml = (yamlText: string): boolean => {
       return false
     if (!RULE_PROVIDER_TYPES.includes(parsed.type as (typeof RULE_PROVIDER_TYPES)[number]))
       return false
+    pathTouched.value = typeof parsed.path === 'string' && !!parsed.path.trim()
     form.value = createForm({
       ...(props.initial ?? ({} as RuleProviderDraft)),
       name: parsed.name,

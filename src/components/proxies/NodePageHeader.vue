@@ -1,12 +1,16 @@
 <template>
   <CtrlsBar solid>
-    <div class="flex min-h-12 items-center gap-2 p-2">
+    <!-- 窄屏放不下「分段 + 搜索 + 三个按钮」：搜索单独换一行，按钮仍留在首行，
+         否则搜索框会被压到四五十像素、占位符整个看不见。 -->
+    <div class="flex min-h-12 flex-wrap items-center gap-2 p-2">
       <SegmentedControl
         v-model="nodeNavigation"
         :options="navigation"
         class="shrink-0"
       />
-      <div class="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        class="order-last flex min-w-0 basis-full items-center gap-2 md:order-none md:flex-1 md:basis-auto"
+      >
         <slot name="search" />
       </div>
       <div class="ml-auto flex shrink-0 items-center gap-2">

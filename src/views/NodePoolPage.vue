@@ -10,14 +10,14 @@
           v-model="nodeSearch"
           :placeholder="`${$t('search')} | Regex`"
           clearable
-          class="w-32 max-w-80 flex-1"
+          class="w-32 max-w-none flex-1 md:max-w-80"
         />
         <TextInput
           v-else
           v-model="poolSearch"
           :placeholder="`${$t('search')} | Regex`"
           clearable
-          class="w-32 max-w-80 flex-1"
+          class="w-32 max-w-none flex-1 md:max-w-80"
         />
       </template>
       <template v-if="props.view === 'groups'">
@@ -59,7 +59,7 @@
           @click="openCreateGroup"
         >
           <PlusIcon class="h-4 w-4" />
-          {{ $t('proxyGroupEditorAddGroup') }}
+          <span class="hidden sm:inline">{{ $t('proxyGroupEditorAddGroup') }}</span>
         </button>
       </template>
       <template v-else>

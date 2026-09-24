@@ -1,8 +1,7 @@
-import { proxiesTabShow, proxyProviederList } from '@/assembly/proxies'
 import { ruleProviderList, rulesTabShow } from '@/assembly/rules'
 import { openDialogCount } from '@/composables/dialog'
 import { useSettingsSection } from '@/composables/settingsSection'
-import { CONNECTION_TAB_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
+import { CONNECTION_TAB_TYPE, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
 import { connectionTabShow } from '@/store/connections'
@@ -83,17 +82,7 @@ export const useSwipeRouter = () => {
     return flatten(
       renderRoutes.value.map((r) => {
         if (swipeInTabs.value) {
-          if (r === ROUTE_NAME.proxies && proxyProviederList.value.length > 0) {
-            return Object.values(PROXY_TAB_TYPE).map((tab) => {
-              return [
-                () => route.name === ROUTE_NAME.proxies && proxiesTabShow.value === tab,
-                () => {
-                  router.push({ name: ROUTE_NAME.proxies })
-                  proxiesTabShow.value = tab
-                },
-              ]
-            })
-          } else if (r === ROUTE_NAME.connections) {
+          if (r === ROUTE_NAME.connections) {
             return Object.values(CONNECTION_TAB_TYPE).map((tab) => {
               return [
                 () => route.name === ROUTE_NAME.connections && connectionTabShow.value === tab,

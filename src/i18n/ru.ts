@@ -654,7 +654,16 @@ const ru: Partial<LANG_MESSAGE> = {
     'Ядро не подключено: изменения сохраняются как черновик и применятся при запуске',
   mainEntryEditTitle: 'Редактировать главную точку входа',
   mainEntryLocked:
-    'Главная точка входа задаёт порты верхнего уровня YAML, allow-lan и настройки TUN; её нельзя удалить',
+    'Главная точка входа задаёт порты верхнего уровня YAML, allow-lan, TUN и DNS; её нельзя удалить',
+  dnsSettings: 'Настройки DNS',
+  dnsNameserver: 'Вышестоящие DNS',
+  dnsFallback: 'Резервные DNS',
+  dnsDefaultNameserver: 'DNS для разрешения',
+  dnsEnhancedMode: 'Расширенный режим',
+  dnsFakeIpRange: 'Диапазон Fake-IP',
+  dnsKernelDefault: 'По умолчанию в ядре',
+  dnsRestartHint:
+    'DNS нельзя изменить на ходу: сохраните, затем примените конфиг с перезапуском ядра',
   portHttp: 'Порт HTTP',
   portSocks: 'Порт SOCKS',
   portMixed: 'Порт Mixed',

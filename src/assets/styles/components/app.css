@@ -54,6 +54,14 @@
     inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
 }
 
+/* ---------- 标签 ---------- */
+
+/* daisyUI 的 .badge 不带 white-space，窄屏里 flex 一压，「运行正常」「running」这种短标签
+   就被折成两行、撑成一个小方块。flex 项的 min-width 随内容算，nowrap 之后也不会再被压窄。 */
+.badge {
+  white-space: nowrap;
+}
+
 /* ---------- 侧栏 ---------- */
 
 /* 高亮完全交给滑动指示器（见 utilities/motion.css），因此清掉 daisyUI menu 自带的态背景 */
@@ -117,6 +125,18 @@
   }
   &:focus-visible {
     @apply ring-primary ring-2 ring-inset;
+  }
+}
+/*
+ * 窄屏：标签至少留 55% 宽，否则「内核版本」这种四字标签会被 270px 宽的控件挤成一列竖排
+ * 的单字。装不下时整行折行，控件落到第二行左对齐。
+ */
+@media (max-width: 767px) {
+  .setting-item {
+    flex-wrap: wrap;
+  }
+  .setting-item .setting-item-label {
+    min-width: 55%;
   }
 }
 .settings-dependent-item {

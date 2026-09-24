@@ -1,11 +1,12 @@
 <template>
+  <!-- 与连接页同因：窄屏头部 fixed，行模式把 LogsCtrl 放进虚拟列表的 before 槽就不再占位 -->
   <div
     :class="
       isLogTable
         ? 'relative flex size-full flex-col overflow-hidden'
         : 'relative size-full overflow-x-hidden'
     "
-    :style="isLogTable ? padding : undefined"
+    :style="padding"
   >
     <template v-if="isLogTable">
       <LogsCtrl />

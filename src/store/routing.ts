@@ -8,8 +8,6 @@ export type RoutingRuleDraft = {
   target: string
   noResolve?: boolean
   enabled: boolean
-  /** 内置默认规则：不可删除、类型锁定、始终排在末尾 */
-  builtin?: boolean
 }
 
 export type SubRuleDraft = {
@@ -29,7 +27,21 @@ export type TunSettings = {
   'dns-hijack'?: string[]
 }
 
-/** 主入口：对应 config.yaml 顶层端口属性 + allow-lan + tun 块（仅此处可配置 TUN） */
+/**
+ * DNS：对应 config.yaml 的 dns 块。只存用户真正填了的字段，构建 YAML 时补 `enable: true`；
+ * 主入口没有这一项就等于不配置 DNS（内核用默认解析）。
+ */
+export type DnsDraft = {
+  /** redir-host / fake-ip，留空走内核默认 */
+  'enhanced-mode'?: string
+  /** 解析 nameserver 自身用的 DNS，一般填 IP 或 `system` */
+  'default-nameserver'?: string[]
+  nameserver?: string[]
+  fallback?: string[]
+  'fake-ip-range'?: string
+}
+
+/** 主入口：对应 config.yaml 顶层端口属性 + allow-lan + tun / dns 块（仅此处可配置 TUN） */
 export type MainEntryDraft = {
   port?: number
   'socks-port'?: number
@@ -38,6 +50,8 @@ export type MainEntryDraft = {
   'tproxy-port'?: number
   'allow-lan'?: boolean
   tun: TunSettings
+  /** 缺省即 YAML 里不写 dns 块，走内核默认的解析方式 */
+  dns?: DnsDraft
 }
 
 /** 子入口：对应 config.yaml listeners 列表项 */
@@ -76,8 +90,6 @@ export type RuleProviderDraft = {
   /** 仅 inline：规则字符串列表 */
   payload?: string[]
 }
-
-export const DEFAULT_RULE_ID = 'rule-default'
 
 export const RULE_TARGET_ACTIONS = ['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS'] as const
 
@@ -149,9 +161,7 @@ export const ruleToString = (rule: RoutingRuleDraft) => {
   return rule.noResolve ? `${base},no-resolve` : base
 }
 
-export const parseRuleString = (
-  line: string,
-): Omit<RoutingRuleDraft, 'id' | 'enabled' | 'builtin'> | null => {
+export const parseRuleString = (line: string): Omit<RoutingRuleDraft, 'id' | 'enabled'> | null => {
   const parts = line
     .split(',')
     .map((part) => part.trim())
@@ -171,9 +181,14 @@ export const parseRuleString = (
 
 export const INBOUND_TYPES = ['mixed', 'http', 'socks', 'redirect', 'tproxy'] as const
 export const TUN_STACKS = ['system', 'gvisor', 'mixed', 'mips'] as const
+export const DNS_ENHANCED_MODES = ['redir-host', 'fake-ip'] as const
 export const RULE_PROVIDER_TYPES = ['http', 'file', 'inline'] as const
 export const RULE_PROVIDER_FORMATS = ['yaml', 'text', 'mrs'] as const
 export const RULE_PROVIDER_BEHAVIORS = ['domain', 'ipcidr', 'classical'] as const
+
+/** 规则集合的默认缓存路径：`./ruleset/<名字>.<后缀>`，后缀即声明的解析格式 */
+export const ruleProviderDefaultPath = (name: string, format: string) =>
+  `./ruleset/${name.trim().replace(/[\\/:*?"<>|\s]/g, '_')}.${format === 'text' ? 'txt' : format}`
 
 export const defaultTunSettings = (): TunSettings => ({
   enable: false,
@@ -207,23 +222,25 @@ export const routingMainEntry = useStorage<MainEntryDraft>(
 )
 
 /**
- * 默认分流内容（主规则 + 内置规则集合）的代次。
+ * 内置规则集合的格式纠正跑过没有（纠正那一步在 seedRoutingDefaults 里）。
  *
- * 只用来跑一次性迁移：老库里的默认三段是「局域网 IP-CIDR + GEOSITE/GEOIP cn」，
- * 现改为 reject/proxy/direct 规则集合。用户改过就不动，删掉也不会再冒出来。
+ * 早先版本把 reject/proxy/direct 三份按 `text` 声明，内核会把资产首行的 `payload:` 也当成一条
+ * 规则；这里只把那三行的格式与缓存路径改回 yaml，跑一次就够，不增不减行、也不碰主规则表。
  */
-const DEFAULT_RULES_GENERATION = 2
+const RULE_PROVIDER_FORMAT_FIX_GENERATION = 3
 const routingDefaultsGeneration = useStorage<number>('config/routing-defaults-generation', 0)
 
-/** 规则按优先级从上到下；内置默认规则始终垫底 */
-const sortBuiltinLast = (rules: RoutingRuleDraft[]) => [
-  ...rules.filter((rule) => !rule.builtin),
-  ...rules.filter((rule) => rule.builtin),
-]
-
-/** 整表替换主规则（规则列表编辑器保存用）；内置默认规则仍然垫底 */
+/**
+ * 整表替换主规则（规则列表编辑器保存用）。
+ *
+ * MATCH 是终止规则：内核命中它就不再往下看后面的行，所以它一律垫底，用户把它排到中间也不会
+ * 让自己前面的规则凭空失效。
+ */
 export const setRoutingRules = (rules: RoutingRuleDraft[]) => {
-  routingRules.value = sortBuiltinLast(rules)
+  routingRules.value = [
+    ...rules.filter((rule) => rule.type !== 'MATCH'),
+    ...rules.filter((rule) => rule.type === 'MATCH'),
+  ]
 }
 
 export const upsertSubRule = (sub: SubRuleDraft, originalName?: string) => {
@@ -321,28 +338,60 @@ const LOYAL_SOLDIER = 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@rele
 /**
  * 内置默认规则集合：Loyalsoldier 的 reject/proxy/direct 三份域名集。
  *
- * `format: text` 不能省——这三份 release 资产是纯文本规则列表，mihomo 的
- * rule-provider 默认按 yaml 解析，不写就会解析失败。
+ * 资产文件名以 `.txt` 结尾，内容却是 `payload:` 打头的 YAML 规则文档（`- '+.a.com'`
+ * 一行一条），所以格式只能按 `yaml` 声明；按 text 读会把首行 `payload:` 也当成一条规则。
  */
 export const DEFAULT_RULE_PROVIDERS: RuleProviderDraft[] = ['reject', 'proxy', 'direct'].map(
   (name) => ({
     name,
     type: 'http',
-    format: 'text',
+    format: 'yaml',
     behavior: 'domain',
     url: `${LOYAL_SOLDIER}/${name}.txt`,
-    path: `./ruleset/${name}.yaml`,
+    path: ruleProviderDefaultPath(name, 'yaml'),
     interval: 86400,
   }),
 )
 
-/** 冷启动默认主规则：广告拦截 → 国内直连集合 → GEOIP 直连 → 其余走「全部节点」。 */
+/**
+ * 代次迁移比对用的字段：格式与缓存路径是内置默认值自己会纠正的两项，不参与签名；
+ * 其余任一项对不上就算用户改过这份集合，整行不动。
+ */
+const PROVIDER_FIELDS_LOCKED = [
+  'name',
+  'type',
+  'behavior',
+  'url',
+  'interval',
+  'size-limit',
+  'proxy',
+] as const
+
+const isUntouchedDefaultProvider = (item: RuleProviderDraft, def: RuleProviderDraft) =>
+  PROVIDER_FIELDS_LOCKED.every((field) => item[field] === def[field])
+
+/**
+ * 冷启动默认主规则：广告拦截 → 局域网直连 → 域名代理 → 国内域名直连 → 国内 IP 直连
+ * → 其余走「全部节点」。
+ *
+ * 局域网一段用 `GEOIP,LAN` 而不是逐条私网 IP-CIDR：LAN 是内核内建的私网判定，一行就够，
+ * 也不用像 `RULE-SET,LAN` 那样先养一个同名规则集合（删掉集合会让这条规则指空、整份配置
+ * 在内核侧失效）。
+ */
 const defaultRoutingRules = (): RoutingRuleDraft[] => [
   {
     id: 'rule-set-reject',
     type: 'RULE-SET',
     payload: 'reject',
     target: 'REJECT',
+    enabled: true,
+  },
+  {
+    id: 'rule-geoip-lan',
+    type: 'GEOIP',
+    payload: 'LAN',
+    target: 'DIRECT',
+    noResolve: true,
     enabled: true,
   },
   {
@@ -364,34 +413,17 @@ const defaultRoutingRules = (): RoutingRuleDraft[] => [
     type: 'GEOIP',
     payload: 'CN',
     target: 'DIRECT',
+    noResolve: true,
     enabled: true,
   },
   {
-    id: DEFAULT_RULE_ID,
+    id: 'rule-default',
     type: 'MATCH',
     payload: '',
     target: ALL_NODES_GROUP_NAME,
     enabled: true,
-    builtin: true,
   },
 ]
-
-// 旧一代默认主规则的 id 集合；规则表恰好还是这一组（用户没动过）时才整块替换。
-const LEGACY_DEFAULT_RULE_IDS = [
-  'rule-lan-10',
-  'rule-lan-100',
-  'rule-lan-127',
-  'rule-lan-172',
-  'rule-lan-192',
-  'rule-lan-v6',
-  'rule-geosite-cn',
-  'rule-geoip-cn',
-  DEFAULT_RULE_ID,
-]
-
-const isUntouchedLegacyDefaults = (rules: RoutingRuleDraft[]) =>
-  rules.length === LEGACY_DEFAULT_RULE_IDS.length &&
-  rules.every((rule) => LEGACY_DEFAULT_RULE_IDS.includes(rule.id))
 
 export const seedRoutingDefaults = () => {
   // v8 曾把主入口建模为内置 listener；顶层属性 store 出现后把它迁移掉
@@ -407,38 +439,21 @@ export const seedRoutingDefaults = () => {
     routingMainEntry.value = { ...routingMainEntry.value, 'allow-lan': false }
   }
 
-  if (routingRules.value.length === 0) {
-    // 冷启动：整张规则表为空才注入默认五条。用户删掉它们后不会在下次启动又冒出来。
-    routingRules.value = defaultRoutingRules()
-  } else if (
-    routingDefaultsGeneration.value < DEFAULT_RULES_GENERATION &&
-    isUntouchedLegacyDefaults(routingRules.value)
-  ) {
-    // 上一代默认三段是局域网 IP-CIDR + GEOSITE/GEOIP cn；整块换成规则集合版。
-    // 用户改过任意一条就不匹配签名，不动他的表。
-    routingRules.value = defaultRoutingRules()
-  }
+  // 只在各自为空时注入默认内容（冷启动）：这些行落库后就是用户的普通数据，删掉不会在下次
+  // 启动又冒出来。构建 YAML 那侧另有兜底，规则表没有 MATCH 也会补一条（composeConfig）。
+  if (routingRules.value.length === 0) routingRules.value = defaultRoutingRules()
+  if (routingRuleProviders.value.length === 0)
+    routingRuleProviders.value = [...DEFAULT_RULE_PROVIDERS]
 
-  if (routingDefaultsGeneration.value < DEFAULT_RULES_GENERATION) {
-    const existing = new Set(routingRuleProviders.value.map((item) => item.name))
-    const missing = DEFAULT_RULE_PROVIDERS.filter((item) => !existing.has(item.name))
-    if (missing.length) {
-      routingRuleProviders.value = [...routingRuleProviders.value, ...missing]
-    }
-    routingDefaultsGeneration.value = DEFAULT_RULES_GENERATION
-  }
-
-  if (!routingRules.value.some((item) => item.id === DEFAULT_RULE_ID)) {
-    routingRules.value = [
-      ...routingRules.value,
-      {
-        id: DEFAULT_RULE_ID,
-        type: 'MATCH',
-        payload: '',
-        target: ALL_NODES_GROUP_NAME,
-        enabled: true,
-        builtin: true,
-      },
-    ]
+  if (routingDefaultsGeneration.value < RULE_PROVIDER_FORMAT_FIX_GENERATION) {
+    // 追加式种子不会回头改已存在的行，所以老库里那三份 text 要单独纠正一次格式与缓存路径；
+    // 除这两项以外任一字段对不上就算用户改过这份集合，整行不动。
+    routingRuleProviders.value = routingRuleProviders.value.map((item) => {
+      const def = DEFAULT_RULE_PROVIDERS.find((provider) => provider.name === item.name)
+      if (!def || !isUntouchedDefaultProvider(item, def)) return item
+      if (item.format === def.format && item.path === def.path) return item
+      return { ...item, format: def.format, path: def.path }
+    })
+    routingDefaultsGeneration.value = RULE_PROVIDER_FORMAT_FIX_GENERATION
   }
 }

@@ -1,7 +1,9 @@
 <template>
+  <!-- 窄屏的头部是 fixed（脱离文档流），卡片模式把 ConnectionCtrl 放进虚拟列表的 before 槽，
+       它就不占位了 —— 两种模式都得让位；宽屏那侧 padding 本身为空。 -->
   <div
     class="relative flex size-full flex-col overflow-hidden"
-    :style="!isConnectionCard && padding"
+    :style="padding"
   >
     <template v-if="isConnectionCard">
       <ConnectionCardList />

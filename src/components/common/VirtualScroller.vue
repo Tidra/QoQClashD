@@ -41,7 +41,6 @@
     <div
       v-else
       class="base-container m-3 flex-row p-3 text-sm"
-      :style="{ marginTop: `${paddingTop + 12}px`, marginBottom: `${paddingBottom}px` }"
     >
       {{ $t('noData') }}
     </div>
@@ -49,14 +48,9 @@
 </template>
 
 <script setup lang="ts">
-import { usePaddingForViews } from '@/composables/paddingViews'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { computed, nextTick, ref } from 'vue'
 
-const { paddingTop, paddingBottom } = usePaddingForViews({
-  offsetTop: 0,
-  offsetBottom: 0,
-})
 const parentRef = ref<HTMLElement | null>(null)
 const props = withDefaults(
   defineProps<{
@@ -82,8 +76,10 @@ const virutalOptions = computed(() => {
     estimateSize: () => props.size,
     getItemKey: (index: number) => props.getItemKey?.(props.data[index], index) ?? index,
     overscan: props.overscan,
-    paddingStart: paddingTop.value,
-    paddingEnd: paddingBottom.value + 24,
+    // 顶/底让位是给窄屏那根 fixed 头部和 dock 的，但外层视图根节点已经用
+    // usePaddingForViews 的 padding 把自己缩小到二者之间了，这里再算一遍就是两层空白
+    // ——整列内容会被推到屏幕中间。
+    paddingEnd: 12,
   }
 })
 

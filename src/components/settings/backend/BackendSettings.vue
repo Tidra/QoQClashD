@@ -195,15 +195,18 @@
         </div>
         <div class="setting-item">
           <div class="setting-item-label">{{ $t('kernelVersionLabel') }}</div>
-          <div class="flex items-center gap-2">
+          <!-- 版本下拉的 min-content 就有 ~180px（「默认（内置） (v1.19.27)」里那串不带空格的版本号），
+               再加 80px 的下载钮在 320px 屏上必然顶出 .settings-grid 的 overflow-hidden，
+               所以这一组自己也要能折行：钮掉到下拉下面右对齐。 -->
+          <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <SelectInput
               v-model="kernelVersion"
               :options="versionOptions"
               searchable
-              class="select select-bordered select-sm w-56"
+              class="select select-bordered select-sm w-56 max-w-full"
             />
             <button
-              class="btn btn-sm btn-primary"
+              class="btn btn-sm btn-primary shrink-0"
               :disabled="kernelBusy || kernelDownloadMode === 'uptodate'"
               @click="startKernelDownload"
             >
