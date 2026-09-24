@@ -1,6 +1,6 @@
 {
   "name": "qoqclashd",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Mihomo 代理控制面板：内置内核托管、节点/订阅/分流配置与一键下发",
   "license": "MIT",
   "type": "module",
